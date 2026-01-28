@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { videos, actionablePoints } from "@/lib/db/schema";
-import { extractVideoId, getYouTubeThumbnail, getVideoMetadata, isTheoChannel, THEO_CHANNEL_HANDLE } from "@/lib/youtube";
+import { extractVideoId, getYouTubeThumbnail, getVideoMetadata, isTheoChannel } from "@/lib/youtube";
 import { extractActionablePoints } from "@/lib/ai";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -35,8 +35,17 @@ export async function POST(request: NextRequest) {
 
         // Validate that the video is from Theo's channel
         if (!isTheoChannel(metadata.authorUrl)) {
+            const funnyMessages = [
+                "🚫 Hold up! This app is EXCLUSIVELY for Theo's videos. We're loyal fans here! Go find a video from @t3dotgg and try again.",
+                "😤 Excuse me? That's not a Theo video! This app only speaks fluent @t3dotgg. Please try again with authentic Theo content!",
+                "🙅 Nice try, but this isn't a Theo video! We're ride-or-die for @t3dotgg here. Bring us the real deal!",
+                "⚠️ WARNING: Non-Theo video detected! This app runs on pure @t3dotgg energy. Find a video from Theo and come back!",
+                "🤨 That video isn't from Theo's channel... Are you trying to cheat on @t3dotgg? We don't do that here!",
+            ];
+            const randomMessage = funnyMessages[Math.floor(Math.random() * funnyMessages.length)];
+
             return NextResponse.json(
-                { error: `This app only works with videos from Theo's channel (${THEO_CHANNEL_HANDLE}). Please use a video from his channel.` },
+                { error: randomMessage },
                 { status: 400 }
             );
         }

@@ -103,10 +103,17 @@ export default function Dashboard() {
 
     setDeletingId(id);
     try {
-      await fetch(`/api/videos/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/videos/${id}`, { method: "DELETE" });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to delete video");
+      }
+      
       setVideos(videos.filter((v) => v.id !== id));
     } catch (err) {
       console.error("Error deleting video:", err);
+      alert(err instanceof Error ? err.message : "Failed to delete video. Please try again.");
     } finally {
       setDeletingId(null);
     }
