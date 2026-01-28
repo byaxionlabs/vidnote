@@ -19,6 +19,8 @@ import {
   Brain,
   Zap,
   Play,
+  X,
+  Video,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -26,6 +28,7 @@ interface ActionablePoint {
   id: string;
   content: string;
   category: string;
+  timestamp: number | null;
   isCompleted: boolean;
   order: number;
 }
@@ -39,6 +42,13 @@ interface VideoData {
   createdAt: string;
 }
 
+// Helper to format seconds to MM:SS
+function formatTimestamp(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
 export default function VideoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data: session, isPending } = useSession();
@@ -48,6 +58,7 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updatingPoint, setUpdatingPoint] = useState<string | null>(null);
+  const [previewPoint, setPreviewPoint] = useState<ActionablePoint | null>(null);
 
   useEffect(() => {
     if (!isPending && !session) {
@@ -142,10 +153,7 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
           <div className="max-w-5xl mx-auto px-6">
             <div className="flex items-center h-18 py-4">
               <Link href="/dashboard" className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-md">
-                  <span className="text-lg font-bold text-primary-foreground">T</span>
-                </div>
-                <span className="text-xl font-bold text-foreground">Theo-Notes</span>
+                <span className="text-2xl font-bold text-foreground font-serif italic">Theo Notes</span>
               </Link>
             </div>
           </div>
@@ -168,7 +176,7 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
       <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
         <div className="text-center animate-in fade-in duration-500">
           <div className="w-24 h-24 rounded-2xl bg-card border-2 border-dashed border-border flex items-center justify-center mx-auto mb-6">
-            <span className="text-4xl font-bold text-muted-foreground">T</span>
+            <span className="text-4xl font-bold text-muted-foreground font-serif">T</span>
           </div>
           <h1 className="text-3xl mb-4 text-foreground">Video Not Found</h1>
           <p className="text-muted-foreground mb-8 max-w-md">{error || "This video doesn't exist or you don't have access to it."}</p>
@@ -193,10 +201,7 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
         <div className="max-w-5xl mx-auto px-6">
           <div className="flex items-center justify-between h-18 py-4">
             <Link href="/dashboard" className="flex items-center gap-3 group">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
-                <span className="text-lg font-bold text-primary-foreground">T</span>
-              </div>
-              <span className="text-xl font-bold text-foreground">Theo-Notes</span>
+              <span className="text-2xl font-bold text-foreground font-serif italic">Theo Notes</span>
             </Link>
             <div className="flex items-center gap-2">
               <a
@@ -335,6 +340,7 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
                       key={point.id}
                       point={point}
                       onToggle={() => togglePoint(point.id, point.isCompleted)}
+                      onPreview={() => setPreviewPoint(point)}
                       isUpdating={updatingPoint === point.id}
                       colorClass="primary"
                     />
@@ -363,6 +369,7 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
                       key={point.id}
                       point={point}
                       onToggle={() => togglePoint(point.id, point.isCompleted)}
+                      onPreview={() => setPreviewPoint(point)}
                       isUpdating={updatingPoint === point.id}
                       colorClass="chart-3"
                     />
@@ -394,6 +401,7 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
                       key={point.id}
                       point={point}
                       onToggle={() => togglePoint(point.id, point.isCompleted)}
+                      onPreview={() => setPreviewPoint(point)}
                       isUpdating={updatingPoint === point.id}
                       colorClass="chart-2"
                     />
@@ -413,6 +421,67 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
           </div>
         )}
       </main>
+
+      {/* Video Preview Modal */}
+      {previewPoint && video && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-background/80 backdrop-blur-md"
+            onClick={() => setPreviewPoint(null)}
+          ></div>
+          <div className="relative bg-card border border-border rounded-3xl overflow-hidden w-full max-w-3xl shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Video size={20} className="text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground">Video Clip</h3>
+                  {previewPoint.timestamp !== null && (
+                    <p className="text-sm text-muted-foreground">
+                      Starting at {formatTimestamp(previewPoint.timestamp)}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setPreviewPoint(null)}
+                className="w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* YouTube Embed */}
+            <div className="aspect-video">
+              <iframe
+                src={`https://www.youtube.com/embed/${video.youtubeId}${previewPoint.timestamp ? `?start=${previewPoint.timestamp}&autoplay=1` : "?autoplay=1"}`}
+                title="Video preview"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                className="w-full h-full"
+              />
+            </div>
+
+            {/* Point Content */}
+            <div className="p-5 border-t border-border bg-muted/30">
+              <p className="text-foreground">{previewPoint.content}</p>
+              <div className="mt-3 flex items-center gap-3">
+                <span className="px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-full bg-primary/10 text-primary border border-primary/30">
+                  {previewPoint.category}
+                </span>
+                {previewPoint.timestamp !== null && (
+                  <span className="px-3 py-1 text-xs font-medium rounded-full bg-muted text-muted-foreground border border-border flex items-center gap-1">
+                    <Clock size={12} />
+                    {formatTimestamp(previewPoint.timestamp)}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -420,11 +489,12 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
 interface PointCardProps {
   point: ActionablePoint;
   onToggle: () => void;
+  onPreview: () => void;
   isUpdating: boolean;
   colorClass: string;
 }
 
-function PointCard({ point, onToggle, isUpdating, colorClass }: PointCardProps) {
+function PointCard({ point, onToggle, onPreview, isUpdating, colorClass }: PointCardProps) {
   const borderColorMap: Record<string, string> = {
     "primary": "border-l-primary",
     "chart-2": "border-l-chart-2",
@@ -439,40 +509,57 @@ function PointCard({ point, onToggle, isUpdating, colorClass }: PointCardProps) 
 
   return (
     <div
-      className={`bg-card border border-border rounded-xl p-5 flex items-start gap-4 transition-all duration-300 cursor-pointer group hover:shadow-md hover:border-primary/30 border-l-4 ${borderColorMap[colorClass]} ${
+      className={`bg-card border border-border rounded-xl p-5 transition-all duration-300 group hover:shadow-md hover:border-primary/30 border-l-4 ${borderColorMap[colorClass]} ${
         point.isCompleted ? "opacity-60" : ""
       }`}
-      onClick={onToggle}
     >
-      <div className="pt-0.5 flex-shrink-0">
-        {isUpdating ? (
-          <Loader2 size={24} className="animate-spin text-primary" />
-        ) : (
-          <div
-            className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
-              point.isCompleted
-                ? "bg-primary border-primary"
-                : "border-border group-hover:border-primary"
+      <div className="flex items-start gap-4">
+        {/* Checkbox */}
+        <div className="pt-0.5 flex-shrink-0 cursor-pointer" onClick={onToggle}>
+          {isUpdating ? (
+            <Loader2 size={24} className="animate-spin text-primary" />
+          ) : (
+            <div
+              className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
+                point.isCompleted
+                  ? "bg-primary border-primary"
+                  : "border-border group-hover:border-primary"
+              }`}
+            >
+              {point.isCompleted && (
+                <CheckCircle2 size={14} className="text-primary-foreground" />
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <p
+            className={`text-base leading-relaxed text-foreground ${
+              point.isCompleted ? "line-through text-muted-foreground" : ""
             }`}
           >
-            {point.isCompleted && (
-              <CheckCircle2 size={14} className="text-primary-foreground" />
+            {point.content}
+          </p>
+          
+          {/* Timestamp and Preview Button */}
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            {point.timestamp !== null && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onPreview(); }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition-all"
+              >
+                <Play size={12} fill="currentColor" />
+                Watch at {formatTimestamp(point.timestamp)}
+              </button>
             )}
+            <span className={`hidden sm:inline-flex px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full border ${badgeColorMap[colorClass]}`}>
+              {point.category}
+            </span>
           </div>
-        )}
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <p
-          className={`text-base leading-relaxed text-foreground ${
-            point.isCompleted ? "line-through text-muted-foreground" : ""
-          }`}
-        >
-          {point.content}
-        </p>
-      </div>
-      <span className={`hidden sm:inline-flex px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full border ${badgeColorMap[colorClass]}`}>
-        {point.category}
-      </span>
     </div>
   );
 }

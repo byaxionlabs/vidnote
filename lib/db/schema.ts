@@ -1,22 +1,22 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { pgTable, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
 
 // Better Auth tables
-export const user = sqliteTable("user", {
+export const user = pgTable("user", {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     email: text("email").notNull().unique(),
-    emailVerified: integer("emailVerified", { mode: "boolean" }).notNull(),
+    emailVerified: boolean("emailVerified").notNull().default(false),
     image: text("image"),
-    createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
-    updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
-export const session = sqliteTable("session", {
+export const session = pgTable("session", {
     id: text("id").primaryKey(),
-    expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
     token: text("token").notNull().unique(),
-    createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
-    updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
     ipAddress: text("ipAddress"),
     userAgent: text("userAgent"),
     userId: text("userId")
@@ -24,7 +24,7 @@ export const session = sqliteTable("session", {
         .references(() => user.id),
 });
 
-export const account = sqliteTable("account", {
+export const account = pgTable("account", {
     id: text("id").primaryKey(),
     accountId: text("accountId").notNull(),
     providerId: text("providerId").notNull(),
@@ -34,25 +34,25 @@ export const account = sqliteTable("account", {
     accessToken: text("accessToken"),
     refreshToken: text("refreshToken"),
     idToken: text("idToken"),
-    accessTokenExpiresAt: integer("accessTokenExpiresAt", { mode: "timestamp" }),
-    refreshTokenExpiresAt: integer("refreshTokenExpiresAt", { mode: "timestamp" }),
+    accessTokenExpiresAt: timestamp("accessTokenExpiresAt"),
+    refreshTokenExpiresAt: timestamp("refreshTokenExpiresAt"),
     scope: text("scope"),
     password: text("password"),
-    createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
-    updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
-export const verification = sqliteTable("verification", {
+export const verification = pgTable("verification", {
     id: text("id").primaryKey(),
     identifier: text("identifier").notNull(),
     value: text("value").notNull(),
-    expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
-    createdAt: integer("createdAt", { mode: "timestamp" }),
-    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+    expiresAt: timestamp("expiresAt").notNull(),
+    createdAt: timestamp("createdAt").defaultNow(),
+    updatedAt: timestamp("updatedAt").defaultNow(),
 });
 
 // App-specific tables
-export const videos = sqliteTable("videos", {
+export const videos = pgTable("videos", {
     id: text("id").primaryKey(),
     userId: text("userId")
         .notNull()
@@ -62,18 +62,19 @@ export const videos = sqliteTable("videos", {
     title: text("title"),
     thumbnailUrl: text("thumbnailUrl"),
     transcript: text("transcript"),
-    createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
-    updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
-export const actionablePoints = sqliteTable("actionable_points", {
+export const actionablePoints = pgTable("actionable_points", {
     id: text("id").primaryKey(),
     videoId: text("videoId")
         .notNull()
         .references(() => videos.id),
     content: text("content").notNull(),
     category: text("category"), // 'action', 'remember', 'insight'
-    isCompleted: integer("isCompleted", { mode: "boolean" }).default(false),
+    timestamp: integer("timestamp"), // Timestamp in seconds where this point is discussed
+    isCompleted: boolean("isCompleted").default(false),
     order: integer("order").notNull(),
-    createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
 });

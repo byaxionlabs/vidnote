@@ -1,36 +1,120 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Theo-Notes 🌹
+
+> Actionable insights from Theo's (@t3dotgg) YouTube videos, powered by Gemini AI.
+
+![Theo-Notes](https://img.shields.io/badge/Theo--Notes-Quantum%20Rose-ff6b9d)
+
+## Features
+
+- 🎬 **Video Processing**: Paste any video from Theo's channel and extract insights
+- 🤖 **AI-Powered**: Uses Google Gemini to analyze video content directly
+- ✅ **Action Items**: Get clear action items, key takeaways, and insights
+- 📊 **Progress Tracking**: Mark items as complete and track your progress
+- 🌙 **Dark/Light Mode**: Beautiful Quantum Rose theme with toggle
+- 🔐 **Authentication**: Secure user accounts with Better Auth
+
+## Tech Stack
+
+- **Framework**: Next.js 16 (App Router)
+- **Database**: Neon PostgreSQL (serverless)
+- **ORM**: Drizzle ORM
+- **Auth**: Better Auth
+- **AI**: Google Gemini AI
+- **Styling**: Tailwind CSS v4
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+1. [Node.js](https://nodejs.org/) v20 or higher
+2. [Neon Database](https://neon.tech) account (free tier available)
+3. [Google AI Studio](https://aistudio.google.com/) API key
+
+### Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/theo-notes.git
+   cd theo-notes
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Set up environment variables**
+   
+   Copy `.env.example` to `.env` and fill in your values:
+   ```bash
+   cp .env.example .env
+   ```
+
+   Required variables:
+   ```env
+   # Neon Database URL (get from Neon console)
+   DATABASE_URL=postgresql://user:password@ep-xxx.region.aws.neon.tech/dbname?sslmode=require
+
+   # Better Auth secret (generate a random 32+ char string)
+   BETTER_AUTH_SECRET=your-super-secret-key-at-least-32-chars
+
+   # Google Gemini API Key (get from Google AI Studio)
+   GEMINI_API_KEY=your-gemini-api-key
+
+   # App URLs
+   BETTER_AUTH_URL=http://localhost:3000
+   NEXT_PUBLIC_APP_URL=http://localhost:3000
+   ```
+
+4. **Push database schema to Neon**
+   ```bash
+   npm run db:push
+   ```
+
+5. **Start the development server**
+   ```bash
+   npm run dev
+   ```
+
+6. Open [http://localhost:3000](http://localhost:3000) 🎉
+
+## Database Commands
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Generate migrations
+npm run db:generate
+
+# Push schema to database
+npm run db:push
+
+# Open Drizzle Studio (database GUI)
+npm run db:studio
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Deployment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Vercel (Recommended)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Push your code to GitHub
+2. Import the project in [Vercel](https://vercel.com)
+3. Add your environment variables
+4. Deploy!
 
-## Learn More
+### Environment Variables for Production
 
-To learn more about Next.js, take a look at the following resources:
+Make sure to update these for production:
+- `BETTER_AUTH_URL` → Your production URL
+- `NEXT_PUBLIC_APP_URL` → Your production URL
+- `BETTER_AUTH_SECRET` → A new, secure random string
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Channel Restriction
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This app is built exclusively for Theo's YouTube channel (@t3dotgg). Attempting to add videos from other channels will result in funny error messages! 😄
 
-## Deploy on Vercel
+## License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+MIT
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+Built with 💖 for the Theo community

@@ -139,10 +139,8 @@ export default function Dashboard() {
         {/* Logo */}
         <div className="p-6 border-b border-border">
           <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-md">
-              <span className="text-lg font-bold text-primary-foreground">T</span>
-            </div>
-            <span className="text-xl font-bold text-foreground">Theo-Notes</span>
+            
+            <span className="text-3xl font-bold text-foreground font-serif italic">Theo Notes</span>
           </Link>
         </div>
 
@@ -197,7 +195,7 @@ export default function Dashboard() {
             <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-md">
               <span className="text-lg font-bold text-primary-foreground">T</span>
             </div>
-            <span className="text-xl font-bold text-foreground">Theo-Notes</span>
+            <span className="text-xl font-bold text-foreground font-serif">Theo-Notes</span>
           </Link>
           <div className="flex items-center gap-2">
             <ThemeToggle />

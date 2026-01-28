@@ -77,6 +77,7 @@ export async function POST(request: NextRequest) {
             videoId: videoRecord.id,
             content: point.content,
             category: point.category,
+            timestamp: point.timestamp || null, // Timestamp in seconds
             isCompleted: false,
             order: index,
             createdAt: new Date(),

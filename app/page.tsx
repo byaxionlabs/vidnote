@@ -134,7 +134,7 @@ export default function Home() {
               <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg">
                 <span className="text-2xl font-bold text-primary-foreground">T</span>
               </div>
-              <h1 className="text-4xl lg:text-5xl font-bold text-foreground">
+              <h1 className="text-4xl lg:text-5xl font-bold text-foreground font-serif">
                 Theo-Notes
               </h1>
             </div>
