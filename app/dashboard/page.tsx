@@ -17,6 +17,9 @@ import {
   CheckCircle2,
   X,
   PlayCircle,
+  Zap,
+  Film,
+  User,
 } from "lucide-react";
 
 interface Video {
@@ -118,28 +121,33 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen relative z-10">
       {/* Header */}
-      <header className="sticky top-0 z-50 glass border-b border-glass-border">
+      <header className="sticky top-0 z-50 glass border-b border-[var(--glass-border)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/dashboard" className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent-purple flex items-center justify-center">
-                <Youtube size={22} className="text-white" />
+          <div className="flex items-center justify-between h-18 py-4">
+            <Link href="/dashboard" className="flex items-center gap-3 group">
+              <div className="relative">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[var(--accent-gold)] to-[var(--accent-gold-soft)] flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+                  <Youtube size={22} className="text-[var(--bg-void)]" />
+                </div>
               </div>
-              <span className="text-xl font-bold tracking-tight">VidNote</span>
+              <span className="text-xl font-bold tracking-tight font-display">VidNote</span>
             </Link>
 
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-muted hidden sm:block">
-                {session.user.email}
-              </span>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)]">
+                <User size={16} className="text-[var(--text-muted)]" />
+                <span className="text-sm text-[var(--text-secondary)]">
+                  {session.user.email}
+                </span>
+              </div>
               <button
                 onClick={() => signOut()}
-                className="btn-secondary flex items-center gap-2 py-2 px-4"
+                className="btn-icon hover:!border-[var(--danger)]/50 hover:!text-[var(--danger)]"
+                title="Sign Out"
               >
-                <LogOut size={16} />
-                <span className="hidden sm:inline">Sign Out</span>
+                <LogOut size={18} />
               </button>
             </div>
           </div>
@@ -147,18 +155,23 @@ export default function Dashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         {/* Page Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold mb-1">Your Videos</h1>
-            <p className="text-muted">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10">
+          <div className="animate-fadeIn">
+            <div className="flex items-center gap-2 text-[var(--accent-gold)] text-sm font-semibold mb-2">
+              <Film size={16} />
+              <span>YOUR LIBRARY</span>
+            </div>
+            <h1 className="text-4xl font-bold font-display mb-2">Video Insights</h1>
+            <p className="text-[var(--text-secondary)]">
               {videos.length} {videos.length === 1 ? "video" : "videos"} processed
             </p>
           </div>
           <button
             onClick={() => setShowModal(true)}
-            className="btn-primary flex items-center gap-2"
+            className="btn-primary flex items-center gap-2 animate-fadeIn"
+            style={{ animationDelay: "0.1s" }}
           >
             <Plus size={20} />
             Add Video
@@ -171,7 +184,7 @@ export default function Dashboard() {
             {[...Array(6)].map((_, i) => (
               <div key={i} className="glass-card overflow-hidden">
                 <div className="skeleton aspect-video"></div>
-                <div className="p-4 space-y-3">
+                <div className="p-5 space-y-3">
                   <div className="skeleton h-5 w-3/4"></div>
                   <div className="skeleton h-4 w-1/2"></div>
                 </div>
@@ -179,12 +192,17 @@ export default function Dashboard() {
             ))}
           </div>
         ) : videos.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-20 h-20 rounded-full bg-card mx-auto mb-6 flex items-center justify-center">
-              <PlayCircle size={40} className="text-muted" />
+          <div className="text-center py-24 animate-fadeIn">
+            <div className="relative inline-block mb-8">
+              <div className="w-28 h-28 rounded-3xl bg-[var(--bg-surface)] border border-[var(--glass-border)] flex items-center justify-center">
+                <PlayCircle size={48} className="text-[var(--text-muted)]" />
+              </div>
+              <div className="absolute -bottom-2 -right-2 w-12 h-12 rounded-2xl bg-gradient-to-br from-[var(--accent-gold)] to-[var(--accent-cyan)] flex items-center justify-center animate-float">
+                <Sparkles size={24} className="text-[var(--bg-void)]" />
+              </div>
             </div>
-            <h2 className="text-2xl font-semibold mb-2">No videos yet</h2>
-            <p className="text-muted mb-6 max-w-md mx-auto">
+            <h2 className="text-3xl font-bold font-display mb-3">No videos yet</h2>
+            <p className="text-[var(--text-secondary)] mb-8 max-w-md mx-auto text-lg">
               Add your first YouTube video to start extracting actionable insights
             </p>
             <button
@@ -210,37 +228,45 @@ export default function Dashboard() {
                       alt={video.title || "Video thumbnail"}
                       width={480}
                       height={270}
-                      className="video-thumbnail transition-transform duration-300 group-hover:scale-105"
+                      className="video-thumbnail"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="absolute bottom-4 left-4 right-4">
-                        <span className="inline-flex items-center gap-1 text-sm font-medium text-white">
-                          <CheckCircle2 size={16} />
-                          View Notes
+                    {/* Overlay on hover */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-void)]/90 via-[var(--bg-void)]/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
+                        <span className="inline-flex items-center gap-2 text-sm font-semibold text-white">
+                          <CheckCircle2 size={18} className="text-[var(--success)]" />
+                          View Insights
                         </span>
+                        <div className="w-10 h-10 rounded-full bg-[var(--accent-gold)] flex items-center justify-center">
+                          <PlayCircle size={20} className="text-[var(--bg-void)] ml-0.5" />
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <div className="p-4">
-                    <h3 className="font-semibold line-clamp-2 mb-2 group-hover:text-primary transition-colors">
+                  <div className="p-5">
+                    <h3 className="font-semibold font-display line-clamp-2 mb-3 group-hover:text-[var(--accent-gold)] transition-colors text-lg">
                       {video.title || "Untitled Video"}
                     </h3>
-                    <div className="flex items-center gap-2 text-sm text-muted">
+                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
                       <Clock size={14} />
-                      {new Date(video.createdAt).toLocaleDateString()}
+                      {new Date(video.createdAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
                     </div>
                   </div>
                 </Link>
-                <div className="px-4 pb-4 flex gap-2">
+                <div className="px-5 pb-5 flex gap-2">
                   <a
                     href={video.youtubeUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 btn-secondary py-2 flex items-center justify-center gap-2 text-sm"
+                    className="flex-1 btn-secondary py-2.5 flex items-center justify-center gap-2 text-sm"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <ExternalLink size={14} />
-                    Watch
+                    Watch on YouTube
                   </a>
                   <button
                     onClick={(e) => {
@@ -248,12 +274,12 @@ export default function Dashboard() {
                       handleDelete(video.id);
                     }}
                     disabled={deletingId === video.id}
-                    className="btn-secondary py-2 px-3 text-red-400 hover:text-red-300 hover:border-red-400/50"
+                    className="btn-icon !w-10 !h-10 hover:!border-[var(--danger)]/50 hover:!text-[var(--danger)] hover:!bg-[var(--danger)]/10"
                   >
                     {deletingId === video.id ? (
-                      <Loader2 size={14} className="animate-spin" />
+                      <Loader2 size={16} className="animate-spin" />
                     ) : (
-                      <Trash2 size={14} />
+                      <Trash2 size={16} />
                     )}
                   </button>
                 </div>
@@ -267,33 +293,36 @@ export default function Dashboard() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-[var(--bg-void)]/80 backdrop-blur-md"
             onClick={() => !processing && setShowModal(false)}
           ></div>
-          <div className="relative glass-card p-6 w-full max-w-lg animate-fadeIn">
+          <div className="relative glass-card p-8 w-full max-w-lg animate-fadeInScale">
+            {/* Decorative gradient */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[var(--accent-gold)] via-[var(--accent-cyan)] to-[var(--accent-gold)] rounded-t-[var(--radius-lg)]"></div>
+            
             <button
               onClick={() => !processing && setShowModal(false)}
-              className="absolute top-4 right-4 text-muted hover:text-foreground transition-colors"
+              className="absolute top-5 right-5 btn-icon !w-9 !h-9"
               disabled={processing}
             >
-              <X size={24} />
+              <X size={18} />
             </button>
 
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent-purple flex items-center justify-center">
-                <Sparkles size={24} className="text-white" />
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--accent-gold)] to-[var(--accent-cyan)] flex items-center justify-center shadow-lg animate-glow">
+                <Sparkles size={26} className="text-[var(--bg-void)]" />
               </div>
               <div>
-                <h2 className="text-xl font-bold">Add New Video</h2>
-                <p className="text-sm text-muted">
+                <h2 className="text-2xl font-bold font-display">Add New Video</h2>
+                <p className="text-sm text-[var(--text-muted)]">
                   Paste a YouTube URL to extract insights
                 </p>
               </div>
             </div>
 
             <form onSubmit={handleSubmit}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">
+              <div className="mb-5">
+                <label className="block text-sm font-medium mb-2 text-[var(--text-secondary)]">
                   YouTube URL
                 </label>
                 <input
@@ -308,21 +337,32 @@ export default function Dashboard() {
               </div>
 
               {error && (
-                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                <div className="mb-5 p-4 rounded-xl bg-[var(--danger)]/10 border border-[var(--danger)]/30 text-[var(--danger)] text-sm animate-fadeIn">
                   {error}
                 </div>
               )}
 
               {processing && (
-                <div className="mb-4 p-4 rounded-lg bg-primary/10 border border-primary/30">
-                  <div className="flex items-center gap-3 mb-3">
-                    <Loader2 size={20} className="animate-spin text-primary" />
-                    <span className="font-medium">Processing video...</span>
+                <div className="mb-5 p-5 rounded-xl bg-[var(--accent-gold)]/5 border border-[var(--accent-gold)]/20 animate-fadeIn">
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="relative">
+                      <Loader2 size={24} className="animate-spin text-[var(--accent-gold)]" />
+                    </div>
+                    <span className="font-semibold text-[var(--accent-gold)]">Processing video...</span>
                   </div>
-                  <div className="text-sm text-muted space-y-1">
-                    <p>• Fetching video transcript</p>
-                    <p>• Analyzing content with AI</p>
-                    <p>• Extracting actionable points</p>
+                  <div className="space-y-2 text-sm text-[var(--text-secondary)]">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)] animate-pulse"></div>
+                      <p>Analyzing video with Gemini AI</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-cyan)] animate-pulse" style={{ animationDelay: "0.2s" }}></div>
+                      <p>Extracting actionable insights</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[var(--insight)] animate-pulse" style={{ animationDelay: "0.4s" }}></div>
+                      <p>Organizing key takeaways</p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -335,11 +375,11 @@ export default function Dashboard() {
                 {processing ? (
                   <>
                     <Loader2 size={18} className="animate-spin" />
-                    Processing...
+                    Extracting Insights...
                   </>
                 ) : (
                   <>
-                    <Sparkles size={18} />
+                    <Zap size={18} />
                     Extract Insights
                   </>
                 )}

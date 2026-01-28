@@ -16,6 +16,9 @@ import {
   Loader2,
   Clock,
   Sparkles,
+  Trophy,
+  Brain,
+  Zap,
 } from "lucide-react";
 
 interface ActionablePoint {
@@ -107,8 +110,6 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
     }
   };
 
-
-
   const groupedPoints = {
     action: points.filter((p) => p.category === "action"),
     remember: points.filter((p) => p.category === "remember"),
@@ -128,25 +129,25 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
 
   if (loading) {
     return (
-      <div className="min-h-screen">
-        <header className="sticky top-0 z-50 glass border-b border-glass-border">
+      <div className="min-h-screen relative z-10">
+        <header className="sticky top-0 z-50 glass border-b border-[var(--glass-border)]">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center h-16">
+            <div className="flex items-center h-18 py-4">
               <Link href="/dashboard" className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent-purple flex items-center justify-center">
-                  <Youtube size={22} className="text-white" />
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[var(--accent-gold)] to-[var(--accent-gold-soft)] flex items-center justify-center shadow-lg">
+                  <Youtube size={22} className="text-[var(--bg-void)]" />
                 </div>
-                <span className="text-xl font-bold tracking-tight">VidNote</span>
+                <span className="text-xl font-bold tracking-tight font-display">VidNote</span>
               </Link>
             </div>
           </div>
         </header>
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="skeleton h-8 w-48 mb-6"></div>
-          <div className="skeleton aspect-video rounded-2xl mb-8"></div>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          <div className="skeleton h-8 w-48 mb-8"></div>
+          <div className="skeleton aspect-video rounded-2xl mb-10"></div>
           <div className="space-y-4">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="skeleton h-16 rounded-xl"></div>
+              <div key={i} className="skeleton h-20 rounded-xl"></div>
             ))}
           </div>
         </div>
@@ -156,10 +157,13 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
 
   if (error || !video) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-2">Video Not Found</h1>
-          <p className="text-muted mb-6">{error || "This video doesn't exist or you don't have access to it."}</p>
+      <div className="min-h-screen flex flex-col items-center justify-center relative z-10">
+        <div className="text-center animate-fadeIn">
+          <div className="w-20 h-20 rounded-2xl bg-[var(--bg-surface)] border border-[var(--glass-border)] flex items-center justify-center mx-auto mb-6">
+            <Youtube size={40} className="text-[var(--text-muted)]" />
+          </div>
+          <h1 className="text-3xl font-bold font-display mb-3">Video Not Found</h1>
+          <p className="text-[var(--text-secondary)] mb-8 max-w-md">{error || "This video doesn't exist or you don't have access to it."}</p>
           <Link href="/dashboard" className="btn-primary inline-flex items-center gap-2">
             <ArrowLeft size={18} />
             Back to Dashboard
@@ -170,32 +174,33 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen relative z-10">
       {/* Header */}
-      <header className="sticky top-0 z-50 glass border-b border-glass-border">
+      <header className="sticky top-0 z-50 glass border-b border-[var(--glass-border)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/dashboard" className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent-purple flex items-center justify-center">
-                <Youtube size={22} className="text-white" />
+          <div className="flex items-center justify-between h-18 py-4">
+            <Link href="/dashboard" className="flex items-center gap-3 group">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[var(--accent-gold)] to-[var(--accent-gold-soft)] flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+                <Youtube size={22} className="text-[var(--bg-void)]" />
               </div>
-              <span className="text-xl font-bold tracking-tight">VidNote</span>
+              <span className="text-xl font-bold tracking-tight font-display">VidNote</span>
             </Link>
             <div className="flex items-center gap-2">
               <a
                 href={video.youtubeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn-secondary py-2 px-4 flex items-center gap-2"
+                className="btn-secondary py-2.5 px-4 flex items-center gap-2"
               >
                 <ExternalLink size={16} />
                 <span className="hidden sm:inline">Watch Video</span>
               </a>
               <button
                 onClick={handleDelete}
-                className="btn-secondary py-2 px-3 text-red-400 hover:text-red-300 hover:border-red-400/50"
+                className="btn-icon hover:!border-[var(--danger)]/50 hover:!text-[var(--danger)] hover:!bg-[var(--danger)]/10"
+                title="Delete Video"
               >
-                <Trash2 size={16} />
+                <Trash2 size={18} />
               </button>
             </div>
           </div>
@@ -203,81 +208,116 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
       </header>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         {/* Back Button */}
         <Link
           href="/dashboard"
-          className="inline-flex items-center gap-2 text-muted hover:text-foreground transition-colors mb-6"
+          className="inline-flex items-center gap-2 text-[var(--text-muted)] hover:text-[var(--accent-gold)] transition-colors mb-8 group animate-fadeIn"
         >
-          <ArrowLeft size={18} />
+          <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
           Back to Dashboard
         </Link>
 
         {/* Video Info Card */}
-        <div className="glass-card overflow-hidden mb-8 animate-fadeIn">
+        <div className="glass-card overflow-hidden mb-10 animate-fadeIn" style={{ animationDelay: "0.1s" }}>
+          {/* Gradient top border */}
+          <div className="h-1 bg-gradient-to-r from-[var(--accent-gold)] via-[var(--accent-cyan)] to-[var(--accent-gold)]"></div>
+          
           <div className="flex flex-col lg:flex-row">
-            <div className="lg:w-80 flex-shrink-0">
+            <div className="lg:w-96 flex-shrink-0 relative overflow-hidden">
               <Image
                 src={video.thumbnailUrl}
                 alt={video.title || "Video thumbnail"}
-                width={320}
-                height={180}
+                width={384}
+                height={216}
                 className="w-full h-full object-cover"
               />
+              {/* Play overlay */}
+              <div className="absolute inset-0 bg-gradient-to-br from-[var(--bg-void)]/20 to-transparent flex items-center justify-center">
+                <a
+                  href={video.youtubeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-16 h-16 rounded-full bg-[var(--accent-gold)] flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
+                >
+                  <svg className="w-6 h-6 text-[var(--bg-void)] ml-1" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                </a>
+              </div>
             </div>
-            <div className="flex-1 p-6">
-              <h1 className="text-2xl font-bold mb-3 line-clamp-2">{video.title}</h1>
-              <div className="flex items-center gap-4 text-sm text-muted mb-4">
-                <span className="flex items-center gap-1">
-                  <Clock size={14} />
-                  Added {new Date(video.createdAt).toLocaleDateString()}
+            <div className="flex-1 p-6 lg:p-8">
+              <h1 className="text-2xl lg:text-3xl font-bold font-display mb-4 line-clamp-2 leading-tight">{video.title}</h1>
+              <div className="flex flex-wrap items-center gap-4 text-sm text-[var(--text-muted)] mb-6">
+                <span className="flex items-center gap-2">
+                  <Clock size={15} />
+                  Added {new Date(video.createdAt).toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
                 </span>
-                <span className="flex items-center gap-1">
-                  <Sparkles size={14} />
-                  {points.length} insights extracted
+                <span className="flex items-center gap-2">
+                  <Sparkles size={15} className="text-[var(--accent-gold)]" />
+                  <span className="text-[var(--accent-gold)]">{points.length} insights</span>
                 </span>
               </div>
 
-              {/* Progress */}
-              <div className="mt-auto">
-                <div className="flex items-center justify-between text-sm mb-2">
-                  <span className="text-muted">Progress</span>
-                  <span className="font-medium">
-                    {completedCount} / {points.length} completed
+              {/* Progress Section */}
+              <div className="bg-[var(--bg-deep)] rounded-xl p-5 border border-[var(--glass-border)]">
+                <div className="flex items-center justify-between text-sm mb-3">
+                  <div className="flex items-center gap-2">
+                    <Trophy size={16} className="text-[var(--accent-gold)]" />
+                    <span className="font-medium">Progress</span>
+                  </div>
+                  <span className="text-[var(--accent-gold)] font-bold">
+                    {completedCount} / {points.length}
                   </span>
                 </div>
-                <div className="h-2 bg-card rounded-full overflow-hidden">
+                <div className="progress-bar">
                   <div
-                    className="h-full bg-gradient-to-r from-accent-green to-secondary rounded-full transition-all duration-500"
+                    className="progress-bar-fill"
                     style={{ width: `${progress}%` }}
                   ></div>
                 </div>
+                {progress === 100 && (
+                  <div className="mt-3 text-center">
+                    <span className="text-sm text-[var(--success)] font-medium flex items-center justify-center gap-2">
+                      <CheckCircle2 size={16} />
+                      All insights reviewed!
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
 
         {/* Actionable Points */}
-        <div className="space-y-8">
+        <div className="space-y-10">
           {/* Action Items */}
           {groupedPoints.action.length > 0 && (
-            <section className="animate-fadeIn" style={{ animationDelay: "0.1s" }}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-lg bg-accent-green/10 border border-accent-green/30 flex items-center justify-center">
-                  <Target size={20} className="text-accent-green" />
+            <section className="animate-fadeIn" style={{ animationDelay: "0.2s" }}>
+              <div className="flex items-center gap-4 mb-5">
+                <div className="w-12 h-12 rounded-xl bg-[var(--success-glow)] border border-[var(--success)]/30 flex items-center justify-center">
+                  <Target size={24} className="text-[var(--success)]" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold">Action Items</h2>
-                  <p className="text-sm text-muted">Things to do after watching</p>
+                  <h2 className="text-xl font-bold font-display">Action Items</h2>
+                  <p className="text-sm text-[var(--text-muted)]">Things to do after watching</p>
+                </div>
+                <div className="ml-auto">
+                  <span className="badge badge-action">{groupedPoints.action.length}</span>
                 </div>
               </div>
               <div className="space-y-3">
-                {groupedPoints.action.map((point) => (
+                {groupedPoints.action.map((point, index) => (
                   <PointCard
                     key={point.id}
                     point={point}
                     onToggle={() => togglePoint(point.id, point.isCompleted)}
                     isUpdating={updatingPoint === point.id}
+                    index={index}
                   />
                 ))}
               </div>
@@ -286,23 +326,27 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
 
           {/* Key Takeaways */}
           {groupedPoints.remember.length > 0 && (
-            <section className="animate-fadeIn" style={{ animationDelay: "0.2s" }}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-lg bg-accent-yellow/10 border border-accent-yellow/30 flex items-center justify-center">
-                  <CheckCircle2 size={20} className="text-accent-yellow" />
+            <section className="animate-fadeIn" style={{ animationDelay: "0.3s" }}>
+              <div className="flex items-center gap-4 mb-5">
+                <div className="w-12 h-12 rounded-xl bg-[var(--warning-glow)] border border-[var(--warning)]/30 flex items-center justify-center">
+                  <Brain size={24} className="text-[var(--warning)]" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold">Key Takeaways</h2>
-                  <p className="text-sm text-muted">Important facts to remember</p>
+                  <h2 className="text-xl font-bold font-display">Key Takeaways</h2>
+                  <p className="text-sm text-[var(--text-muted)]">Important facts to remember</p>
+                </div>
+                <div className="ml-auto">
+                  <span className="badge badge-remember">{groupedPoints.remember.length}</span>
                 </div>
               </div>
               <div className="space-y-3">
-                {groupedPoints.remember.map((point) => (
+                {groupedPoints.remember.map((point, index) => (
                   <PointCard
                     key={point.id}
                     point={point}
                     onToggle={() => togglePoint(point.id, point.isCompleted)}
                     isUpdating={updatingPoint === point.id}
+                    index={index}
                   />
                 ))}
               </div>
@@ -311,23 +355,27 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
 
           {/* Insights */}
           {groupedPoints.insight.length > 0 && (
-            <section className="animate-fadeIn" style={{ animationDelay: "0.3s" }}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-lg bg-accent-purple/10 border border-accent-purple/30 flex items-center justify-center">
-                  <Lightbulb size={20} className="text-accent-purple" />
+            <section className="animate-fadeIn" style={{ animationDelay: "0.4s" }}>
+              <div className="flex items-center gap-4 mb-5">
+                <div className="w-12 h-12 rounded-xl bg-[var(--insight-glow)] border border-[var(--insight)]/30 flex items-center justify-center">
+                  <Lightbulb size={24} className="text-[var(--insight)]" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold">Insights</h2>
-                  <p className="text-sm text-muted">Deeper understanding and aha moments</p>
+                  <h2 className="text-xl font-bold font-display">Insights</h2>
+                  <p className="text-sm text-[var(--text-muted)]">Deeper understanding and aha moments</p>
+                </div>
+                <div className="ml-auto">
+                  <span className="badge badge-insight">{groupedPoints.insight.length}</span>
                 </div>
               </div>
               <div className="space-y-3">
-                {groupedPoints.insight.map((point) => (
+                {groupedPoints.insight.map((point, index) => (
                   <PointCard
                     key={point.id}
                     point={point}
                     onToggle={() => togglePoint(point.id, point.isCompleted)}
                     isUpdating={updatingPoint === point.id}
+                    index={index}
                   />
                 ))}
               </div>
@@ -335,8 +383,11 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
           )}
 
           {points.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-muted">No actionable points found for this video.</p>
+            <div className="text-center py-16 animate-fadeIn">
+              <div className="w-16 h-16 rounded-2xl bg-[var(--bg-surface)] border border-[var(--glass-border)] flex items-center justify-center mx-auto mb-4">
+                <Zap size={32} className="text-[var(--text-muted)]" />
+              </div>
+              <p className="text-[var(--text-secondary)]">No actionable points found for this video.</p>
             </div>
           )}
         </div>
@@ -349,19 +400,42 @@ interface PointCardProps {
   point: ActionablePoint;
   onToggle: () => void;
   isUpdating: boolean;
+  index: number;
 }
 
-function PointCard({ point, onToggle, isUpdating }: PointCardProps) {
+function PointCard({ point, onToggle, isUpdating, index }: PointCardProps) {
+  const categoryColors = {
+    action: {
+      border: "var(--success)",
+      bg: "var(--success-glow)",
+    },
+    remember: {
+      border: "var(--warning)",
+      bg: "var(--warning-glow)",
+    },
+    insight: {
+      border: "var(--insight)",
+      bg: "var(--insight-glow)",
+    },
+  };
+
+  const colors = categoryColors[point.category as keyof typeof categoryColors] || categoryColors.action;
+
   return (
     <div
-      className={`glass-card p-4 flex items-start gap-4 transition-all cursor-pointer hover:border-primary/50 ${
+      className={`glass-card p-5 flex items-start gap-4 transition-all duration-300 cursor-pointer group ${
         point.isCompleted ? "opacity-60" : ""
       }`}
+      style={{
+        animationDelay: `${index * 0.05}s`,
+        borderLeftWidth: "3px",
+        borderLeftColor: point.isCompleted ? "var(--glass-border)" : colors.border,
+      }}
       onClick={onToggle}
     >
-      <div className="pt-0.5">
+      <div className="pt-0.5 flex-shrink-0">
         {isUpdating ? (
-          <Loader2 size={24} className="animate-spin text-primary" />
+          <Loader2 size={26} className="animate-spin text-[var(--accent-gold)]" />
         ) : (
           <input
             type="checkbox"
@@ -375,7 +449,7 @@ function PointCard({ point, onToggle, isUpdating }: PointCardProps) {
       <div className="flex-1 min-w-0">
         <p
           className={`text-base leading-relaxed ${
-            point.isCompleted ? "line-through text-muted" : ""
+            point.isCompleted ? "line-through text-[var(--text-muted)]" : ""
           }`}
         >
           {point.content}
