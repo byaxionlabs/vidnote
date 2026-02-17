@@ -3,14 +3,17 @@ import { GoogleGenAI } from "@google/genai";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export interface ActionablePoint {
-    content: string;
-    category: string;
-    timestamp?: number; // Start time in seconds
-    timestampEnd?: number; // End time in seconds (optional)
+	content: string;
+	category: string;
+	timestamp?: number; // Start time in seconds
+	timestampEnd?: number; // End time in seconds (optional)
 }
 
-export async function extractActionablePoints(youtubeUrl: string, videoTitle?: string): Promise<ActionablePoint[]> {
-    const prompt = `You are an expert at extracting actionable insights from educational content. 
+export async function extractActionablePoints(
+	youtubeUrl: string,
+	videoTitle?: string,
+): Promise<ActionablePoint[]> {
+	const prompt = `You are an expert at extracting actionable insights from educational content. 
 
 Given the YouTube video${videoTitle ? ` titled "${videoTitle}"` : ""}, extract:
 1. **Action Items**: Specific things the viewer should DO after watching
@@ -38,35 +41,35 @@ Return the response in this exact JSON format:
 
 The timestamp should be in SECONDS from the start of the video. Be as accurate as possible.`;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: [
-                {
-                    fileData: {
-                        fileUri: youtubeUrl,
-                    },
-                },
-                { text: prompt },
-            ],
-        });
+	try {
+		const response = await ai.models.generateContent({
+			model: "gemini-3-flash-preview",
+			contents: [
+				{
+					fileData: {
+						fileUri: youtubeUrl,
+					},
+				},
+				{ text: prompt },
+			],
+		});
 
-        const text = response.text;
+		const text = response.text;
 
-        if (!text) {
-            throw new Error("No response from AI");
-        }
+		if (!text) {
+			throw new Error("No response from AI");
+		}
 
-        // Extract JSON from the response
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-            throw new Error("No JSON found in response");
-        }
+		// Extract JSON from the response
+		const jsonMatch = text.match(/\{[\s\S]*\}/);
+		if (!jsonMatch) {
+			throw new Error("No JSON found in response");
+		}
 
-        const parsed = JSON.parse(jsonMatch[0]);
-        return parsed.points as ActionablePoint[];
-    } catch (error) {
-        console.error("Error extracting actionable points:", error);
-        throw error;
-    }
+		const parsed = JSON.parse(jsonMatch[0]);
+		return parsed.points as ActionablePoint[];
+	} catch (error) {
+		console.error("Error extracting actionable points:", error);
+		throw error;
+	}
 }
