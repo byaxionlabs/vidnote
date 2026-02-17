@@ -38,7 +38,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [url, setUrl] = useState("");
-  const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -68,32 +67,16 @@ export default function Dashboard() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setProcessing(true);
-    setError("");
-
-    try {
-      const res = await fetch("/api/videos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to process video");
-      }
-
-      setShowModal(false);
-      setUrl("");
-      router.push(`/video/${data.video.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setProcessing(false);
+    if (!url.trim()) {
+      setError("Please enter a URL");
+      return;
     }
+    // Navigate immediately to streaming page
+    setShowModal(false);
+    router.push(`/stream?url=${encodeURIComponent(url)}`);
+    setUrl("");
   };
 
   const handleDelete = async (id: string) => {
@@ -104,12 +87,12 @@ export default function Dashboard() {
     setDeletingId(id);
     try {
       const res = await fetch(`/api/videos/${id}`, { method: "DELETE" });
-      
+
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Failed to delete video");
       }
-      
+
       setVideos(videos.filter((v) => v.id !== id));
     } catch (err) {
       console.error("Error deleting video:", err);
@@ -139,7 +122,7 @@ export default function Dashboard() {
         {/* Logo */}
         <div className="p-6 border-b border-border">
           <Link href="/dashboard" className="flex items-center gap-3">
-            
+
             <span className="text-3xl font-bold text-foreground font-serif italic">Theo Notes</span>
           </Link>
         </div>
@@ -147,15 +130,15 @@ export default function Dashboard() {
         {/* Navigation */}
         <nav className="flex-1 p-4">
           <div className="space-y-2">
-            <Link 
-              href="/dashboard" 
+            <Link
+              href="/dashboard"
               className="flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 text-primary font-medium"
             >
               <LayoutGrid size={20} />
               <span>My Notes</span>
             </Link>
           </div>
-          
+
           {/* Channel Info */}
           <div className="mt-6 p-4 bg-muted/50 rounded-xl border border-border">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Videos from</p>
@@ -343,13 +326,12 @@ export default function Dashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-background/80 backdrop-blur-md"
-            onClick={() => !processing && setShowModal(false)}
+            onClick={() => setShowModal(false)}
           ></div>
           <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in fade-in zoom-in-95 duration-300">
             <button
-              onClick={() => !processing && setShowModal(false)}
+              onClick={() => setShowModal(false)}
               className="absolute top-5 right-5 w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-              disabled={processing}
             >
               <X size={18} />
             </button>
@@ -377,7 +359,6 @@ export default function Dashboard() {
                   placeholder="https://www.youtube.com/watch?v=..."
                   className="w-full px-4 py-3.5 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all"
                   required
-                  disabled={processing}
                 />
                 <p className="text-xs text-muted-foreground mt-2">
                   Only videos from Theo&apos;s channel are supported
@@ -390,45 +371,12 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {processing && (
-                <div className="mb-5 p-5 rounded-xl bg-primary/5 border border-primary/20 animate-in fade-in duration-200">
-                  <div className="flex items-center gap-4 mb-4">
-                    <Loader2 size={24} className="animate-spin text-primary" />
-                    <span className="font-semibold text-primary">Analyzing with AI...</span>
-                  </div>
-                  <div className="space-y-2.5 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-                      <p>Processing Theo&apos;s video</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-chart-2 animate-pulse" style={{ animationDelay: "0.2s" }}></div>
-                      <p>Extracting key insights</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-chart-3 animate-pulse" style={{ animationDelay: "0.4s" }}></div>
-                      <p>Organizing action items</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               <button
                 type="submit"
-                disabled={processing}
-                className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100 transition-all"
+                className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all"
               >
-                {processing ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    Extracting Notes...
-                  </>
-                ) : (
-                  <>
-                    <Zap size={18} />
-                    Extract Notes
-                  </>
-                )}
+                <Zap size={18} />
+                Extract Notes
               </button>
             </form>
           </div>

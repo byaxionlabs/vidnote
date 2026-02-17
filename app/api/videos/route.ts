@@ -4,7 +4,9 @@ import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { videos, actionablePoints } from "@/lib/db/schema";
 import { extractVideoId, getYouTubeThumbnail, getVideoMetadata, isTheoChannel } from "@/lib/youtube";
-import { extractActionablePoints } from "@/lib/ai";
+import { generateText, Output } from "ai";
+import { google } from "@ai-sdk/google";
+import { actionablePointsSchema } from "@/lib/schemas";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
@@ -50,11 +52,39 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Normalize YouTube URL for Gemini
+        // Normalize YouTube URL for AI
         const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-        // Extract actionable points using AI (Gemini processes video directly)
-        const points = await extractActionablePoints(youtubeUrl, metadata.title);
+        const prompt = `You are an expert at extracting actionable insights from educational content. 
+
+Given the YouTube video titled "${metadata.title}", extract:
+1. **Action Items**: Specific things the viewer should DO after watching
+2. **Key Takeaways**: Important facts or concepts to REMEMBER
+3. **Insights**: Deeper understanding or "aha moments" from the content
+
+IMPORTANT: For each point, also provide the timestamp (in seconds from the start of the video) where this point is discussed.
+
+Rules:
+- Be specific and concise (max 1-2 sentences per point)
+- Focus on practical, implementable advice
+- Skip filler content, intros, outros, sponsor segments
+- Each point should be self-contained and understandable without context
+- Aim for 5-15 total points depending on content length
+- Timestamps should be ACCURATE to where the point is actually discussed in the video
+
+Analyze this video: ${youtubeUrl}`;
+
+        // Use generateText with Output.object() (replaces deprecated generateObject and direct @google/genai)
+        const { output } = await generateText({
+            model: google("gemini-3-flash-preview"),
+            output: Output.object({
+                schema: actionablePointsSchema,
+            }),
+            prompt,
+            maxRetries: 0,
+        });
+
+        const points = output?.points ?? [];
 
         // Save video to database
         const videoRecord = {
@@ -64,7 +94,7 @@ export async function POST(request: NextRequest) {
             youtubeId: videoId,
             title: metadata.title,
             thumbnailUrl,
-            transcript: "", // No longer fetching transcript separately
+            transcript: "",
             createdAt: new Date(),
             updatedAt: new Date(),
         };
@@ -77,7 +107,7 @@ export async function POST(request: NextRequest) {
             videoId: videoRecord.id,
             content: point.content,
             category: point.category,
-            timestamp: point.timestamp || null, // Timestamp in seconds
+            timestamp: point.timestamp || null,
             isCompleted: false,
             order: index,
             createdAt: new Date(),
