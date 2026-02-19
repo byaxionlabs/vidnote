@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useRef, useMemo, use, Suspense } from "react";
 import { useSession } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { experimental_useObject as useObject } from "@ai-sdk/react";
+import { actionablePointsSchema, type ActionablePoint } from "@/lib/schemas";
 import {
   ArrowLeft,
   ExternalLink,
@@ -24,7 +26,7 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-interface ActionablePoint {
+interface VideoPoint {
   id: string;
   content: string;
   category: string;
@@ -49,45 +51,223 @@ function formatTimestamp(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+function getPointKey(point: ActionablePoint | VideoPoint, index: number): string {
+  return `${point.category}-${point.content.slice(0, 40)}-${index}`;
+}
+
+// ─── Main Page (wraps with Suspense for useSearchParams) ───────────────────
+
 export default function VideoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <Loader2 size={32} className="animate-spin text-primary" />
+        </div>
+      }
+    >
+      <VideoContent id={id} />
+    </Suspense>
+  );
+}
+
+// ─── Core Component ────────────────────────────────────────────────────────
+
+function VideoContent({ id }: { id: string }) {
+  const searchParams = useSearchParams();
   const { data: session, isPending } = useSession();
   const router = useRouter();
+
+  const shouldExtract = searchParams.get("extract") === "true";
+
+  // ── State ──────────────────────────────────────────────────────────────
+
   const [video, setVideo] = useState<VideoData | null>(null);
-  const [points, setPoints] = useState<ActionablePoint[]>([]);
+  const [points, setPoints] = useState<VideoPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [updatingPoint, setUpdatingPoint] = useState<string | null>(null);
-  const [previewPoint, setPreviewPoint] = useState<ActionablePoint | null>(null);
 
+  // Streaming state
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionPhase, setExtractionPhase] = useState<
+    "idle" | "streaming" | "saving" | "done" | "error"
+  >("idle");
+
+  // Interaction state
+  const [updatingPoint, setUpdatingPoint] = useState<string | null>(null);
+  const [previewPoint, setPreviewPoint] = useState<VideoPoint | null>(null);
+
+  // Auth tracking
+  const hasAuthenticatedRef = useRef(false);
+  if (session) hasAuthenticatedRef.current = true;
+
+  const hasStartedExtractionRef = useRef(false);
+
+  // ── useObject for streaming AI extraction ──────────────────────────────
+
+  const { object, submit, stop } = useObject({
+    api: "/api/stream",
+    schema: actionablePointsSchema,
+    onFinish: async ({ object: finalObject, error: finishError }) => {
+      if (finishError) {
+        setError(finishError.message || "Failed to extract insights");
+        setExtractionPhase("error");
+        return;
+      }
+
+      const validPoints = (finalObject?.points ?? []).filter(
+        (p): p is ActionablePoint =>
+          !!p &&
+          typeof p.content === "string" &&
+          p.content.length > 0 &&
+          typeof p.category === "string",
+      );
+
+      if (validPoints.length === 0) {
+        setError("No insights were extracted from this video. Please try again.");
+        setExtractionPhase("error");
+        return;
+      }
+
+      // Save points to the database
+      setExtractionPhase("saving");
+      try {
+        const saveRes = await fetch(`/api/videos/${id}/points`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            points: validPoints,
+          }),
+        });
+
+        if (!saveRes.ok) {
+          const saveData = await saveRes.json();
+          setError(saveData.error || "Failed to save notes");
+          setExtractionPhase("error");
+          return;
+        }
+
+        const saveData = await saveRes.json();
+
+        // Update local state with the saved points (real IDs from DB)
+        setPoints(saveData.points);
+        setExtractionPhase("done");
+        setIsExtracting(false);
+
+        // Clean the URL by removing ?extract=true
+        window.history.replaceState({}, "", `/video/${id}`);
+      } catch {
+        setError("Failed to save notes. Please try again.");
+        setExtractionPhase("error");
+      }
+    },
+    onError: (err) => {
+      setError(err.message || "Failed to extract insights");
+      setExtractionPhase("error");
+    },
+  });
+
+  // High watermark ref to prevent points from flashing away during stream finalization
+  const lastValidPointsRef = useRef<ActionablePoint[]>([]);
+
+  const streamingPoints = useMemo(() => {
+    const validPoints = (object?.points ?? []).filter(
+      (p): p is ActionablePoint =>
+        !!p &&
+        typeof p.content === "string" &&
+        p.content.length > 0 &&
+        typeof p.category === "string",
+    );
+    if (validPoints.length >= lastValidPointsRef.current.length) {
+      lastValidPointsRef.current = validPoints;
+    }
+    return lastValidPointsRef.current;
+  }, [object?.points]);
+
+  // ── Derived data ───────────────────────────────────────────────────────
+
+  // Use streamed points while extracting, DB points when done
+  const displayPoints: (ActionablePoint | VideoPoint)[] =
+    isExtracting && streamingPoints.length > 0 ? streamingPoints : points;
+
+  const groupedPoints = useMemo(
+    () => ({
+      action: displayPoints.filter((p) => p.category === "action"),
+      remember: displayPoints.filter((p) => p.category === "remember"),
+      insight: displayPoints.filter((p) => p.category === "insight"),
+    }),
+    [displayPoints],
+  );
+
+  const completedCount = points.filter((p) => p.isCompleted).length;
+  const progress = points.length > 0 ? (completedCount / points.length) * 100 : 0;
+
+  // ── Effects ────────────────────────────────────────────────────────────
+
+  // Auth redirect
   useEffect(() => {
     if (!isPending && !session) {
       router.push("/");
     }
   }, [session, isPending, router]);
 
-  useEffect(() => {
-    if (session && id) {
-      fetchVideo();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, id]);
+  // Fetch video data
+  const isAuthenticated = !!session;
 
-  const fetchVideo = async () => {
-    try {
-      const res = await fetch(`/api/videos/${id}`);
-      if (!res.ok) {
-        throw new Error("Video not found");
+  useEffect(() => {
+    if (!isAuthenticated || !id) return;
+
+    const fetchVideo = async () => {
+      try {
+        const res = await fetch(`/api/videos/${id}`);
+        if (!res.ok) throw new Error("Video not found");
+
+        const data = await res.json();
+        setVideo(data.video);
+
+        // Only set points from DB if we're not about to extract
+        if (!shouldExtract || data.points.length > 0) {
+          setPoints(data.points);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load video");
+      } finally {
+        setLoading(false);
       }
-      const data = await res.json();
-      setVideo(data.video);
-      setPoints(data.points);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load video");
-    } finally {
-      setLoading(false);
+    };
+
+    fetchVideo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, id]);
+
+  // Start extraction when extract=true and video data is loaded
+  useEffect(() => {
+    if (
+      !shouldExtract ||
+      !video ||
+      loading ||
+      hasStartedExtractionRef.current ||
+      points.length > 0 // Already has points — don't re-extract
+    ) {
+      return;
     }
-  };
+
+    hasStartedExtractionRef.current = true;
+    setIsExtracting(true);
+    setExtractionPhase("streaming");
+
+    // Pass the YouTube URL to the streaming API
+    submit({ url: video.youtubeUrl });
+
+    return () => {
+      stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldExtract, video, loading]);
+
+  // ── Handlers ───────────────────────────────────────────────────────────
 
   const togglePoint = async (pointId: string, isCompleted: boolean) => {
     setUpdatingPoint(pointId);
@@ -99,8 +279,8 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
       });
       setPoints(
         points.map((p) =>
-          p.id === pointId ? { ...p, isCompleted: !isCompleted } : p
-        )
+          p.id === pointId ? { ...p, isCompleted: !isCompleted } : p,
+        ),
       );
     } catch (err) {
       console.error("Error updating point:", err);
@@ -110,35 +290,32 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
   };
 
   const handleDelete = async () => {
-    if (!confirm("Are you sure you want to delete this video and all its notes?")) {
+    if (
+      !confirm("Are you sure you want to delete this video and all its notes?")
+    ) {
       return;
     }
-
     try {
       const res = await fetch(`/api/videos/${id}`, { method: "DELETE" });
-      
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Failed to delete video");
       }
-      
       router.push("/dashboard");
     } catch (err) {
       console.error("Error deleting video:", err);
-      alert(err instanceof Error ? err.message : "Failed to delete video. Please try again.");
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to delete video. Please try again.",
+      );
     }
   };
 
-  const groupedPoints = {
-    action: points.filter((p) => p.category === "action"),
-    remember: points.filter((p) => p.category === "remember"),
-    insight: points.filter((p) => p.category === "insight"),
-  };
+  // ── Early returns ──────────────────────────────────────────────────────
 
-  const completedCount = points.filter((p) => p.isCompleted).length;
-  const progress = points.length > 0 ? (completedCount / points.length) * 100 : 0;
-
-  if (isPending || !session) {
+  // Auth loading — only on initial load
+  if ((isPending || !session) && !hasAuthenticatedRef.current) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="loader"></div>
@@ -153,7 +330,9 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
           <div className="max-w-5xl mx-auto px-6">
             <div className="flex items-center h-18 py-4">
               <Link href="/dashboard" className="flex items-center gap-3">
-                <span className="text-2xl font-bold text-foreground font-serif italic">Theo Notes</span>
+                <span className="text-2xl font-bold text-foreground font-serif italic">
+                  Theo Notes
+                </span>
               </Link>
             </div>
           </div>
@@ -163,7 +342,10 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
           <div className="aspect-video bg-muted animate-pulse rounded-2xl mb-10"></div>
           <div className="space-y-4">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-20 bg-muted animate-pulse rounded-xl"></div>
+              <div
+                key={i}
+                className="h-20 bg-muted animate-pulse rounded-xl"
+              ></div>
             ))}
           </div>
         </div>
@@ -171,16 +353,24 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
     );
   }
 
-  if (error || !video) {
+  if ((error && !isExtracting) || !video) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
         <div className="text-center animate-in fade-in duration-500">
           <div className="w-24 h-24 rounded-2xl bg-card border-2 border-dashed border-border flex items-center justify-center mx-auto mb-6">
-            <span className="text-4xl font-bold text-muted-foreground font-serif">T</span>
+            <Zap size={32} className="text-muted-foreground" />
           </div>
-          <h1 className="text-3xl mb-4 text-foreground">Video Not Found</h1>
-          <p className="text-muted-foreground mb-8 max-w-md">{error || "This video doesn't exist or you don't have access to it."}</p>
-          <Link href="/dashboard" className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg transition-all">
+          <h1 className="text-3xl mb-4 text-foreground">
+            {error ? "Oops!" : "Video Not Found"}
+          </h1>
+          <p className="text-muted-foreground mb-8 max-w-md">
+            {error ||
+              "This video doesn't exist or you don't have access to it."}
+          </p>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+          >
             <ArrowLeft size={18} />
             Back to Dashboard
           </Link>
@@ -188,6 +378,12 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
       </div>
     );
   }
+
+  // ── Render ─────────────────────────────────────────────────────────────
+
+  const showStreamingUI = isExtracting && extractionPhase === "streaming";
+  const showSavingUI = extractionPhase === "saving";
+  const totalDisplayPoints = displayPoints.length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -200,8 +396,13 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
       <header className="sticky top-0 z-50 bg-card/80 backdrop-blur-lg border-b border-border">
         <div className="max-w-5xl mx-auto px-6">
           <div className="flex items-center justify-between h-18 py-4">
-            <Link href="/dashboard" className="flex items-center gap-3 group">
-              <span className="text-2xl font-bold text-foreground font-serif italic">Theo Notes</span>
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-3 group"
+            >
+              <span className="text-2xl font-bold text-foreground font-serif italic">
+                Theo Notes
+              </span>
             </Link>
             <div className="flex items-center gap-2">
               <a
@@ -214,13 +415,15 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
                 <span className="hidden sm:inline">Watch Video</span>
               </a>
               <ThemeToggle />
-              <button
-                onClick={handleDelete}
-                className="w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10 transition-all"
-                title="Delete Video"
-              >
-                <Trash2 size={18} />
-              </button>
+              {!isExtracting && (
+                <button
+                  onClick={handleDelete}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10 transition-all"
+                  title="Delete Video"
+                >
+                  <Trash2 size={18} />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -233,7 +436,10 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
           href="/dashboard"
           className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors mb-8 group animate-in fade-in duration-300"
         >
-          <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+          <ArrowLeft
+            size={18}
+            className="group-hover:-translate-x-1 transition-transform"
+          />
           Back to Dashboard
         </Link>
 
@@ -249,175 +455,324 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
                 height={270}
                 className="w-full h-full object-cover min-h-[200px]"
               />
-              {/* Play Button Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-br from-background/30 to-transparent flex items-center justify-center">
-                <a
-                  href={video.youtubeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-16 h-16 rounded-full bg-primary flex items-center justify-center shadow-xl hover:scale-110 transition-transform"
-                >
-                  <Play size={24} className="text-primary-foreground ml-1" fill="currentColor" />
-                </a>
-              </div>
+              {/* Streaming Badge */}
+              {showStreamingUI && (
+                <div className="absolute top-4 left-4 px-3 py-1.5 bg-primary text-primary-foreground text-xs font-bold rounded-full flex items-center gap-2 shadow-lg">
+                  <span className="w-2 h-2 bg-primary-foreground rounded-full animate-pulse"></span>
+                  LIVE EXTRACTING
+                </div>
+              )}
+              {/* Play Button Overlay (only when not streaming) */}
+              {!isExtracting && (
+                <div className="absolute inset-0 bg-gradient-to-br from-background/30 to-transparent flex items-center justify-center">
+                  <a
+                    href={video.youtubeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-16 h-16 rounded-full bg-primary flex items-center justify-center shadow-xl hover:scale-110 transition-transform"
+                  >
+                    <Play
+                      size={24}
+                      className="text-primary-foreground ml-1"
+                      fill="currentColor"
+                    />
+                  </a>
+                </div>
+              )}
             </div>
-            
+
             {/* Info */}
             <div className="flex-1 p-6 lg:p-8 flex flex-col">
               <div className="flex items-center gap-2 text-xs text-primary font-medium uppercase tracking-wider mb-3">
                 <span>@t3dotgg</span>
                 <span className="text-muted-foreground">•</span>
-                <span className="text-muted-foreground">Theo&apos;s Channel</span>
-              </div>
-              <h1 className="text-2xl lg:text-3xl mb-4 text-foreground leading-snug">{video.title}</h1>
-              
-              <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mb-6">
-                <span className="flex items-center gap-2">
-                  <Clock size={15} />
-                  {new Date(video.createdAt).toLocaleDateString('en-US', {
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric'
-                  })}
+                <span className="text-muted-foreground">
+                  Theo&apos;s Channel
                 </span>
+              </div>
+              <h1 className="text-2xl lg:text-3xl mb-4 text-foreground leading-snug">
+                {video.title}
+              </h1>
+
+              <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mb-6">
+                {!isExtracting && (
+                  <span className="flex items-center gap-2">
+                    <Clock size={15} />
+                    {new Date(video.createdAt).toLocaleDateString("en-US", {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </span>
+                )}
                 <span className="flex items-center gap-2 text-primary">
                   <Sparkles size={15} />
-                  <span className="font-medium">{points.length} notes extracted</span>
+                  <span className="font-medium">
+                    {totalDisplayPoints} note
+                    {totalDisplayPoints !== 1 ? "s" : ""}{" "}
+                    {showStreamingUI ? "extracting..." : "extracted"}
+                  </span>
                 </span>
               </div>
 
-              {/* Progress Section */}
+              {/* Status Section */}
               <div className="mt-auto bg-muted/50 rounded-2xl p-5 border border-border">
-                <div className="flex items-center justify-between text-sm mb-3">
-                  <div className="flex items-center gap-2">
-                    <Trophy size={16} className="text-primary" />
-                    <span className="font-medium text-foreground">Your Progress</span>
-                  </div>
-                  <span className="text-primary font-bold text-lg">
-                    {completedCount}/{points.length}
-                  </span>
-                </div>
-                <div className="h-3 bg-background rounded-full overflow-hidden border border-border">
-                  <div
-                    className="h-full bg-gradient-to-r from-primary to-chart-2 rounded-full transition-all duration-500"
-                    style={{ width: `${progress}%` }}
-                  ></div>
-                </div>
-                {progress === 100 && (
-                  <div className="mt-3 text-center">
-                    <span className="text-sm font-medium flex items-center justify-center gap-2 text-primary">
-                      <CheckCircle2 size={16} />
-                      All notes reviewed! Great job!
+                {/* Streaming statuses */}
+                {showStreamingUI && (
+                  <div className="flex items-center gap-3">
+                    <Loader2
+                      size={20}
+                      className="animate-spin text-primary"
+                    />
+                    <span className="font-medium text-foreground">
+                      AI is extracting insights...
                     </span>
                   </div>
+                )}
+                {showSavingUI && (
+                  <div className="flex items-center gap-3">
+                    <Loader2
+                      size={20}
+                      className="animate-spin text-primary"
+                    />
+                    <span className="font-medium text-foreground">
+                      Saving your notes...
+                    </span>
+                  </div>
+                )}
+                {extractionPhase === "error" && error && (
+                  <div className="flex items-center gap-3">
+                    <Zap size={20} className="text-destructive" />
+                    <span className="font-medium text-destructive">
+                      {error}
+                    </span>
+                  </div>
+                )}
+
+                {/* Normal progress (when not streaming) */}
+                {!isExtracting && extractionPhase !== "error" && (
+                  <>
+                    <div className="flex items-center justify-between text-sm mb-3">
+                      <div className="flex items-center gap-2">
+                        <Trophy size={16} className="text-primary" />
+                        <span className="font-medium text-foreground">
+                          Your Progress
+                        </span>
+                      </div>
+                      <span className="text-primary font-bold text-lg">
+                        {completedCount}/{points.length}
+                      </span>
+                    </div>
+                    <div className="h-3 bg-background rounded-full overflow-hidden border border-border">
+                      <div
+                        className="h-full bg-gradient-to-r from-primary to-chart-2 rounded-full transition-all duration-500"
+                        style={{ width: `${progress}%` }}
+                      ></div>
+                    </div>
+                    {progress === 100 && points.length > 0 && (
+                      <div className="mt-3 text-center">
+                        <span className="text-sm font-medium flex items-center justify-center gap-2 text-primary">
+                          <CheckCircle2 size={16} />
+                          All notes reviewed! Great job!
+                        </span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Insights Grid - Two Column Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Left Column - Action Items */}
-          <div className="space-y-8">
-            {groupedPoints.action.length > 0 && (
-              <section className="animate-in fade-in slide-in-from-left duration-500 delay-100">
-                <div className="flex items-center gap-4 mb-5">
-                  <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center">
-                    <Target size={24} className="text-primary" />
+        {/* Insights Grid */}
+        {totalDisplayPoints > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Left Column - Action Items + Insights */}
+            <div className="space-y-8">
+              {groupedPoints.action.length > 0 && (
+                <section className="animate-in fade-in slide-in-from-left duration-500 delay-100">
+                  <div className="flex items-center gap-4 mb-5">
+                    <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center">
+                      <Target size={24} className="text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="text-xl font-bold text-foreground">
+                        Action Items
+                      </h2>
+                      <p className="text-sm text-muted-foreground">
+                        Things to do
+                      </p>
+                    </div>
+                    <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-primary/10 text-primary border border-primary/30">
+                      {groupedPoints.action.length}
+                    </span>
                   </div>
-                  <div className="flex-1">
-                    <h2 className="text-xl font-bold text-foreground">Action Items</h2>
-                    <p className="text-sm text-muted-foreground">Things to do</p>
+                  <div className="space-y-3">
+                    {groupedPoints.action.map((point, index) => (
+                      <PointCard
+                        key={getPointKey(point, index)}
+                        point={point}
+                        onToggle={
+                          "id" in point && !isExtracting
+                            ? () =>
+                              togglePoint(
+                                (point as VideoPoint).id,
+                                (point as VideoPoint).isCompleted,
+                              )
+                            : undefined
+                        }
+                        onPreview={
+                          "id" in point && !isExtracting
+                            ? () => setPreviewPoint(point as VideoPoint)
+                            : undefined
+                        }
+                        isUpdating={
+                          "id" in point
+                            ? updatingPoint === (point as VideoPoint).id
+                            : false
+                        }
+                        colorClass="primary"
+                        videoId={video.youtubeId}
+                        isStreaming={isExtracting}
+                      />
+                    ))}
                   </div>
-                  <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-primary/10 text-primary border border-primary/30">
-                    {groupedPoints.action.length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {groupedPoints.action.map((point) => (
-                    <PointCard
-                      key={point.id}
-                      point={point}
-                      onToggle={() => togglePoint(point.id, point.isCompleted)}
-                      onPreview={() => setPreviewPoint(point)}
-                      isUpdating={updatingPoint === point.id}
-                      colorClass="primary"
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+                </section>
+              )}
 
-            {groupedPoints.insight.length > 0 && (
-              <section className="animate-in fade-in slide-in-from-left duration-500 delay-300">
-                <div className="flex items-center gap-4 mb-5">
-                  <div className="w-12 h-12 rounded-2xl bg-chart-3/10 border border-chart-3/30 flex items-center justify-center">
-                    <Lightbulb size={24} className="text-chart-3" />
+              {groupedPoints.insight.length > 0 && (
+                <section className="animate-in fade-in slide-in-from-left duration-500 delay-300">
+                  <div className="flex items-center gap-4 mb-5">
+                    <div className="w-12 h-12 rounded-2xl bg-chart-3/10 border border-chart-3/30 flex items-center justify-center">
+                      <Lightbulb size={24} className="text-chart-3" />
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="text-xl font-bold text-foreground">
+                        Insights
+                      </h2>
+                      <p className="text-sm text-muted-foreground">
+                        Aha moments
+                      </p>
+                    </div>
+                    <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-chart-3/10 text-chart-3 border border-chart-3/30">
+                      {groupedPoints.insight.length}
+                    </span>
                   </div>
-                  <div className="flex-1">
-                    <h2 className="text-xl font-bold text-foreground">Insights</h2>
-                    <p className="text-sm text-muted-foreground">Aha moments</p>
+                  <div className="space-y-3">
+                    {groupedPoints.insight.map((point, index) => (
+                      <PointCard
+                        key={getPointKey(point, index)}
+                        point={point}
+                        onToggle={
+                          "id" in point && !isExtracting
+                            ? () =>
+                              togglePoint(
+                                (point as VideoPoint).id,
+                                (point as VideoPoint).isCompleted,
+                              )
+                            : undefined
+                        }
+                        onPreview={
+                          "id" in point && !isExtracting
+                            ? () => setPreviewPoint(point as VideoPoint)
+                            : undefined
+                        }
+                        isUpdating={
+                          "id" in point
+                            ? updatingPoint === (point as VideoPoint).id
+                            : false
+                        }
+                        colorClass="chart-3"
+                        videoId={video.youtubeId}
+                        isStreaming={isExtracting}
+                      />
+                    ))}
                   </div>
-                  <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-chart-3/10 text-chart-3 border border-chart-3/30">
-                    {groupedPoints.insight.length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {groupedPoints.insight.map((point) => (
-                    <PointCard
-                      key={point.id}
-                      point={point}
-                      onToggle={() => togglePoint(point.id, point.isCompleted)}
-                      onPreview={() => setPreviewPoint(point)}
-                      isUpdating={updatingPoint === point.id}
-                      colorClass="chart-3"
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+                </section>
+              )}
+            </div>
+
+            {/* Right Column - Key Takeaways */}
+            <div className="space-y-8">
+              {groupedPoints.remember.length > 0 && (
+                <section className="animate-in fade-in slide-in-from-right duration-500 delay-200">
+                  <div className="flex items-center gap-4 mb-5">
+                    <div className="w-12 h-12 rounded-2xl bg-chart-2/10 border border-chart-2/30 flex items-center justify-center">
+                      <Brain size={24} className="text-chart-2" />
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="text-xl font-bold text-foreground">
+                        Key Takeaways
+                      </h2>
+                      <p className="text-sm text-muted-foreground">
+                        Remember these
+                      </p>
+                    </div>
+                    <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-chart-2/10 text-chart-2 border border-chart-2/30">
+                      {groupedPoints.remember.length}
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {groupedPoints.remember.map((point, index) => (
+                      <PointCard
+                        key={getPointKey(point, index)}
+                        point={point}
+                        onToggle={
+                          "id" in point && !isExtracting
+                            ? () =>
+                              togglePoint(
+                                (point as VideoPoint).id,
+                                (point as VideoPoint).isCompleted,
+                              )
+                            : undefined
+                        }
+                        onPreview={
+                          "id" in point && !isExtracting
+                            ? () => setPreviewPoint(point as VideoPoint)
+                            : undefined
+                        }
+                        isUpdating={
+                          "id" in point
+                            ? updatingPoint === (point as VideoPoint).id
+                            : false
+                        }
+                        colorClass="chart-2"
+                        videoId={video.youtubeId}
+                        isStreaming={isExtracting}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
           </div>
+        )}
 
-          {/* Right Column - Key Takeaways */}
-          <div className="space-y-8">
-            {groupedPoints.remember.length > 0 && (
-              <section className="animate-in fade-in slide-in-from-right duration-500 delay-200">
-                <div className="flex items-center gap-4 mb-5">
-                  <div className="w-12 h-12 rounded-2xl bg-chart-2/10 border border-chart-2/30 flex items-center justify-center">
-                    <Brain size={24} className="text-chart-2" />
-                  </div>
-                  <div className="flex-1">
-                    <h2 className="text-xl font-bold text-foreground">Key Takeaways</h2>
-                    <p className="text-sm text-muted-foreground">Remember these</p>
-                  </div>
-                  <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-chart-2/10 text-chart-2 border border-chart-2/30">
-                    {groupedPoints.remember.length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {groupedPoints.remember.map((point) => (
-                    <PointCard
-                      key={point.id}
-                      point={point}
-                      onToggle={() => togglePoint(point.id, point.isCompleted)}
-                      onPreview={() => setPreviewPoint(point)}
-                      isUpdating={updatingPoint === point.id}
-                      colorClass="chart-2"
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+        {/* Empty state while streaming with no points yet */}
+        {totalDisplayPoints === 0 && showStreamingUI && (
+          <div className="text-center py-16">
+            <Loader2
+              size={48}
+              className="animate-spin text-primary mx-auto mb-4"
+            />
+            <p className="text-muted-foreground text-lg">
+              Watching the video and extracting insights...
+            </p>
+            <p className="text-muted-foreground text-sm mt-2">
+              This may take a moment for longer videos
+            </p>
           </div>
-        </div>
+        )}
 
-        {points.length === 0 && (
+        {/* Empty state for saved video with no points */}
+        {totalDisplayPoints === 0 && !isExtracting && !loading && (
           <div className="text-center py-16 animate-in fade-in duration-500">
             <div className="w-20 h-20 rounded-2xl bg-card border-2 border-dashed border-border flex items-center justify-center mx-auto mb-4">
               <Zap size={32} className="text-muted-foreground" />
             </div>
-            <p className="text-muted-foreground text-lg">No notes found for this video.</p>
+            <p className="text-muted-foreground text-lg">
+              No notes found for this video.
+            </p>
           </div>
         )}
       </main>
@@ -486,75 +841,108 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
   );
 }
 
+// ─── PointCard Component ─────────────────────────────────────────────────────
+
 interface PointCardProps {
-  point: ActionablePoint;
-  onToggle: () => void;
-  onPreview: () => void;
+  point: ActionablePoint | VideoPoint;
+  onToggle?: () => void;
+  onPreview?: () => void;
   isUpdating: boolean;
   colorClass: string;
+  videoId: string;
+  isStreaming: boolean;
 }
 
-function PointCard({ point, onToggle, onPreview, isUpdating, colorClass }: PointCardProps) {
-  const borderColorMap: Record<string, string> = {
-    "primary": "border-l-primary",
-    "chart-2": "border-l-chart-2",
-    "chart-3": "border-l-chart-3",
-  };
+const borderColorMap: Record<string, string> = {
+  primary: "border-l-primary",
+  "chart-2": "border-l-chart-2",
+  "chart-3": "border-l-chart-3",
+};
 
-  const badgeColorMap: Record<string, string> = {
-    "primary": "bg-primary/10 text-primary border-primary/30",
-    "chart-2": "bg-chart-2/10 text-chart-2 border-chart-2/30",
-    "chart-3": "bg-chart-3/10 text-chart-3 border-chart-3/30",
-  };
+const badgeColorMap: Record<string, string> = {
+  primary: "bg-primary/10 text-primary border-primary/30",
+  "chart-2": "bg-chart-2/10 text-chart-2 border-chart-2/30",
+  "chart-3": "bg-chart-3/10 text-chart-3 border-chart-3/30",
+};
+
+function PointCard({
+  point,
+  onToggle,
+  onPreview,
+  isUpdating,
+  colorClass,
+  videoId,
+  isStreaming,
+}: PointCardProps) {
+  const isCompleted = "isCompleted" in point ? point.isCompleted : false;
 
   return (
     <div
-      className={`bg-card border border-border rounded-xl p-5 transition-all duration-300 group hover:shadow-md hover:border-primary/30 border-l-4 ${borderColorMap[colorClass]} ${
-        point.isCompleted ? "opacity-60" : ""
-      }`}
+      className={`bg-card border border-border rounded-xl p-5 transition-all duration-300 group hover:shadow-md hover:border-primary/30 border-l-4 ${borderColorMap[colorClass]} ${isCompleted ? "opacity-60" : ""
+        }`}
     >
       <div className="flex items-start gap-4">
-        {/* Checkbox */}
-        <div className="pt-0.5 flex-shrink-0 cursor-pointer" onClick={onToggle}>
-          {isUpdating ? (
-            <Loader2 size={24} className="animate-spin text-primary" />
-          ) : (
-            <div
-              className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
-                point.isCompleted
-                  ? "bg-primary border-primary"
-                  : "border-border group-hover:border-primary"
-              }`}
-            >
-              {point.isCompleted && (
-                <CheckCircle2 size={14} className="text-primary-foreground" />
+        {/* Checkbox or circle indicator */}
+        <div className="pt-0.5 flex-shrink-0">
+          {isStreaming ? (
+            <div className="w-3 h-3 rounded-full bg-muted-foreground/30 mt-1"></div>
+          ) : onToggle ? (
+            <div className="cursor-pointer" onClick={onToggle}>
+              {isUpdating ? (
+                <Loader2 size={24} className="animate-spin text-primary" />
+              ) : (
+                <div
+                  className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${isCompleted
+                    ? "bg-primary border-primary"
+                    : "border-border group-hover:border-primary"
+                    }`}
+                >
+                  {isCompleted && (
+                    <CheckCircle2
+                      size={14}
+                      className="text-primary-foreground"
+                    />
+                  )}
+                </div>
               )}
             </div>
+          ) : (
+            <div className="w-3 h-3 rounded-full bg-muted-foreground/30 mt-1"></div>
           )}
         </div>
-        
+
         {/* Content */}
         <div className="flex-1 min-w-0">
           <p
-            className={`text-base leading-relaxed text-foreground ${
-              point.isCompleted ? "line-through text-muted-foreground" : ""
-            }`}
+            className={`text-base leading-relaxed text-foreground ${isCompleted ? "line-through text-muted-foreground" : ""
+              }`}
           >
             {point.content}
           </p>
-          
-          {/* Timestamp and Preview Button */}
+
+          {/* Timestamp & badge */}
           <div className="mt-3 flex items-center gap-2 flex-wrap">
-            {point.timestamp !== null && (
+            {point.timestamp && videoId && !isStreaming && onPreview && (
               <button
-                onClick={(e) => { e.stopPropagation(); onPreview(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPreview();
+                }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition-all"
               >
                 <Play size={12} fill="currentColor" />
                 Watch at {formatTimestamp(point.timestamp)}
               </button>
             )}
-            <span className={`hidden sm:inline-flex px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full border ${badgeColorMap[colorClass]}`}>
+            {point.timestamp && (isStreaming || !onPreview) && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary border border-primary/30">
+                <Play size={12} fill="currentColor" />
+                {formatTimestamp(point.timestamp)}
+              </span>
+            )}
+            <span
+              className={`hidden sm:inline-flex px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full border ${badgeColorMap[colorClass]}`}
+            >
               {point.category}
             </span>
           </div>

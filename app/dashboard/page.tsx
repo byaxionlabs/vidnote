@@ -67,16 +67,42 @@ export default function Dashboard() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) {
       setError("Please enter a URL");
       return;
     }
-    // Navigate immediately to streaming page
-    setShowModal(false);
-    router.push(`/stream?url=${encodeURIComponent(url)}`);
-    setUrl("");
+    setError("");
+    setSubmitting(true);
+
+    try {
+      // Validate + create the video record (without points)
+      const res = await fetch("/api/videos/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to create video");
+        setSubmitting(false);
+        return;
+      }
+
+      // Navigate to the video page with extract flag — streaming happens there
+      setShowModal(false);
+      router.push(`/video/${data.video.id}?extract=true`);
+      setUrl("");
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -154,7 +180,7 @@ export default function Dashboard() {
               <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center">
                 <User size={18} className="text-primary" />
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 ">
                 <p className="text-sm font-medium text-foreground truncate">{session.user.name}</p>
                 <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
               </div>
@@ -373,10 +399,20 @@ export default function Dashboard() {
 
               <button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all"
+                disabled={submitting}
+                className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-60 disabled:pointer-events-none"
               >
-                <Zap size={18} />
-                Extract Notes
+                {submitting ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Zap size={18} />
+                    Extract Notes
+                  </>
+                )}
               </button>
             </form>
           </div>
