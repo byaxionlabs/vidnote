@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
         // Normalize YouTube URL for AI
         const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-        const prompt = `You are an expert at extracting actionable insights from educational content. 
+        const textPrompt = `You are an expert at extracting actionable insights from educational content. 
 
 Given the YouTube video titled "${metadata.title}", extract:
 1. **Action Items**: Specific things the viewer should DO after watching
@@ -70,9 +70,7 @@ Rules:
 - Skip filler content, intros, outros, sponsor segments
 - Each point should be self-contained and understandable without context
 - Aim for 5-15 total points depending on content length
-- Timestamps should be ACCURATE to where the point is actually discussed in the video
-
-Analyze this video: ${youtubeUrl}`;
+- Timestamps should be ACCURATE to where the point is actually discussed in the video`;
 
         // Use generateText with Output.object() (replaces deprecated generateObject and direct @google/genai)
         const { output } = await generateText({
@@ -80,7 +78,22 @@ Analyze this video: ${youtubeUrl}`;
             output: Output.object({
                 schema: actionablePointsSchema,
             }),
-            prompt,
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "file",
+                            data: youtubeUrl,
+                            mediaType: "video/mp4",
+                        },
+                        {
+                            type: "text",
+                            text: textPrompt,
+                        },
+                    ],
+                },
+            ],
             maxRetries: 0,
         });
 

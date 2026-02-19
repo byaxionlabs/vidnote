@@ -1,4 +1,4 @@
-import { streamText, Output } from "ai";
+import { streamObject } from "ai";
 import { google } from "@ai-sdk/google";
 import { actionablePointsSchema } from "@/lib/schemas";
 import { auth } from "@/lib/auth";
@@ -42,9 +42,9 @@ export async function POST(request: Request) {
     let metadata;
     try {
         metadata = await getVideoMetadata(videoId);
-    } catch {
+    } catch (err) {
         return new Response(
-            JSON.stringify({ error: "Failed to fetch video metadata" }),
+            JSON.stringify({ error: err instanceof Error ? err.message : "Failed to fetch video metadata" }),
             { status: 500, headers: { "Content-Type": "application/json" } },
         );
     }
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     // Normalize YouTube URL for AI
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-    const prompt = `You are an expert at extracting actionable insights from educational content. 
+    const textPrompt = `You are an expert at extracting actionable insights from educational content. 
 
 Given the YouTube video titled "${metadata.title}", extract:
 1. **Action Items**: Specific things the viewer should DO after watching
@@ -85,24 +85,60 @@ Rules:
 - Skip filler content, intros, outros, sponsor segments
 - Each point should be self-contained and understandable without context
 - Aim for 5-15 total points depending on content length
-- Timestamps should be ACCURATE to where the point is actually discussed in the video
-
-Analyze this video: ${youtubeUrl}`;
+- Timestamps should be ACCURATE to where the point is actually discussed in the video`;
 
 
     console.log(`[API/stream] Gemini request for video: ${videoId} at ${new Date().toISOString()}`);
 
-    const result = streamText({
+    const result = streamObject({
         // gemini-2.0-flash has much higher free tier limits than gemini-2.5-pro
         // Free tier: ~1500 req/day, 15 req/min vs ~25 req/day for 2.5-pro
         model: google("gemini-3-flash-preview"),
-        output: Output.object({
-            schema: actionablePointsSchema,
-        }),
-        prompt,
+        schema: actionablePointsSchema,
+        messages: [
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "file",
+                        data: youtubeUrl,
+                        mediaType: "video/mp4",
+                    },
+                    {
+                        type: "text",
+                        text: textPrompt,
+                    },
+                ],
+            },
+        ],
         // Disable auto-retries: on 429 (rate limit), retrying just burns more quota
         maxRetries: 0,
     });
+    // Drain the object promise to prevent unhandled rejection
+    result.object.catch(() => { });
 
-    return result.toTextStreamResponse();
+    // Build the response stream manually instead of using toTextStreamResponse()
+    // which has a bug that double-closes the controller causing ERR_INVALID_STATE
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+        async start(controller) {
+            try {
+                for await (const chunk of result.textStream) {
+                    controller.enqueue(encoder.encode(chunk));
+                }
+            } catch {
+                // Stream interrupted (e.g. client disconnected) — ignore
+            } finally {
+                try {
+                    controller.close();
+                } catch {
+                    // Already closed — ignore
+                }
+            }
+        },
+    });
+
+    return new Response(stream, {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
 }

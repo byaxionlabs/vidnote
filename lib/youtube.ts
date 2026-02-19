@@ -39,7 +39,8 @@ export async function getVideoMetadata(videoId: string): Promise<{ title: string
     // Use oEmbed API to get video title and author info (no API key required)
     try {
         const response = await fetch(
-            `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+            `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
+            { signal: AbortSignal.timeout(15000) }
         );
 
         if (!response.ok) {
@@ -52,8 +53,29 @@ export async function getVideoMetadata(videoId: string): Promise<{ title: string
             authorName: data.author_name || "",
             authorUrl: data.author_url || ""
         };
-    } catch (error) {
+    } catch (error: unknown) {
         console.error("Error fetching video metadata:", error);
+
+        // Propagate network errors so callers can show a proper message
+        // instead of silently returning fallback data that causes
+        // misleading "not a Theo video" errors
+        const isNetworkError =
+            error instanceof TypeError ||
+            (error instanceof Error &&
+                ("code" in error &&
+                    (
+                        (error as NodeJS.ErrnoException).code === "ENOTFOUND" ||
+                        (error as NodeJS.ErrnoException).code === "UND_ERR_CONNECT_TIMEOUT" ||
+                        (error as NodeJS.ErrnoException).code === "ECONNREFUSED" ||
+                        (error as NodeJS.ErrnoException).code === "ECONNRESET"
+                    )));
+
+        if (isNetworkError) {
+            throw new Error(
+                "Could not connect to YouTube. Please check your internet connection and try again."
+            );
+        }
+
         return { title: "Untitled Video", authorName: "", authorUrl: "" };
     }
 }

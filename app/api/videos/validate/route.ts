@@ -36,9 +36,9 @@ export async function POST(request: NextRequest) {
     let metadata;
     try {
         metadata = await getVideoMetadata(videoId);
-    } catch {
+    } catch (err) {
         return NextResponse.json(
-            { error: "Failed to fetch video metadata" },
+            { error: err instanceof Error ? err.message : "Failed to fetch video metadata" },
             { status: 500 },
         );
     }
