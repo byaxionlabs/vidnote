@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, use, Suspense } from "react";
+import { useState, useEffect, useRef, useMemo, use, useCallback, Suspense } from "react";
 import { useSession } from "@/lib/auth-client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { experimental_useObject as useObject } from "@ai-sdk/react";
 import { actionablePointsSchema, type ActionablePoint } from "@/lib/schemas";
+import { loadApiKey } from "@/lib/api-key";
 import {
   ArrowLeft,
   ExternalLink,
@@ -105,11 +106,37 @@ function VideoContent({ id }: { id: string }) {
 
   const hasStartedExtractionRef = useRef(false);
 
+  // ── BYOK: load user's API key ─────────────────────────────────────────
+
+  const userApiKeyRef = useRef<string | null>(null);
+
+  const loadUserApiKey = useCallback(async () => {
+    if (!session?.user?.id) return;
+    try {
+      const key = await loadApiKey(session.user.id);
+      userApiKeyRef.current = key;
+    } catch {
+      userApiKeyRef.current = null;
+    }
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    loadUserApiKey();
+  }, [loadUserApiKey]);
+
   // ── useObject for streaming AI extraction ──────────────────────────────
 
   const { object, submit, stop } = useObject({
     api: "/api/stream",
     schema: actionablePointsSchema,
+    // Use custom fetch to inject the user's API key at call time
+    fetch: async (url, options) => {
+      const headers = new Headers(options?.headers);
+      if (userApiKeyRef.current) {
+        headers.set("x-gemini-api-key", userApiKeyRef.current);
+      }
+      return fetch(url, { ...options, headers });
+    },
     onFinish: async ({ object: finalObject, error: finishError }) => {
       if (finishError) {
         setError(finishError.message || "Failed to extract insights");

@@ -19,8 +19,11 @@ import {
   Zap,
   LayoutGrid,
   User,
+  Key,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ApiKeySettings } from "@/components/api-key-settings";
+import { hasStoredApiKey } from "@/lib/api-key";
 
 interface VideoItem {
   id: string;
@@ -40,6 +43,8 @@ export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(false);
 
   useEffect(() => {
     if (!isPending && !session) {
@@ -50,6 +55,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (session) {
       fetchVideos();
+      setHasApiKey(hasStoredApiKey());
     }
   }, [session]);
 
@@ -163,6 +169,18 @@ export default function Dashboard() {
               <LayoutGrid size={20} />
               <span>My Notes</span>
             </Link>
+            <button
+              onClick={() => setShowApiKeyModal(true)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-all"
+            >
+              <div className="relative">
+                <Key size={20} />
+                {hasApiKey && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-chart-2 rounded-full border-2 border-card"></span>
+                )}
+              </div>
+              <span>API Key</span>
+            </button>
           </div>
 
           {/* Channel Info */}
@@ -207,6 +225,16 @@ export default function Dashboard() {
             <span className="text-xl font-bold text-foreground font-serif">Theo-Notes</span>
           </Link>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowApiKeyModal(true)}
+              className="w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-primary hover:border-primary/50 transition-all relative"
+              title="API Key Settings"
+            >
+              <Key size={18} />
+              {hasApiKey && (
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-chart-2 rounded-full border-2 border-card"></span>
+              )}
+            </button>
             <ThemeToggle />
             <button
               onClick={() => signOut()}
@@ -418,6 +446,15 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+      {/* API Key Settings Modal */}
+      <ApiKeySettings
+        userId={session.user.id}
+        isOpen={showApiKeyModal}
+        onClose={() => {
+          setShowApiKeyModal(false);
+          setHasApiKey(hasStoredApiKey());
+        }}
+      />
     </div>
   );
 }

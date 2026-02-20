@@ -1,5 +1,5 @@
 import { streamObject } from "ai";
-import { google } from "@ai-sdk/google";
+import { google, createGoogleGenerativeAI } from "@ai-sdk/google";
 import { actionablePointsSchema } from "@/lib/schemas";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
@@ -90,10 +90,18 @@ Rules:
 
     console.log(`[API/stream] Gemini request for video: ${videoId} at ${new Date().toISOString()}`);
 
+    // Check for user-provided API key (BYOK)
+    const userApiKey = request.headers.get("x-gemini-api-key");
+
+    // Use user's key if provided, otherwise fall back to env key
+    const googleProvider = userApiKey
+        ? createGoogleGenerativeAI({ apiKey: userApiKey })
+        : google;
+
     const result = streamObject({
         // gemini-2.0-flash has much higher free tier limits than gemini-2.5-pro
         // Free tier: ~1500 req/day, 15 req/min vs ~25 req/day for 2.5-pro
-        model: google("gemini-3-flash-preview"),
+        model: googleProvider("gemini-3-flash-preview"),
         schema: actionablePointsSchema,
         messages: [
             {
