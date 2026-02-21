@@ -1,4 +1,4 @@
-import { streamObject } from "ai";
+import { streamText, Output } from "ai";
 import { google, createGoogleGenerativeAI } from "@ai-sdk/google";
 import { actionablePointsSchema } from "@/lib/schemas";
 import { auth } from "@/lib/auth";
@@ -98,11 +98,13 @@ Rules:
         ? createGoogleGenerativeAI({ apiKey: userApiKey })
         : google;
 
-    const result = streamObject({
+    const result = streamText({
         // gemini-2.0-flash has much higher free tier limits than gemini-2.5-pro
         // Free tier: ~1500 req/day, 15 req/min vs ~25 req/day for 2.5-pro
         model: googleProvider("gemini-3-flash-preview"),
-        schema: actionablePointsSchema,
+        // Output.object constrains the model to produce valid JSON matching the schema
+        // and enables useObject on the frontend to parse partial objects automatically
+        output: Output.object({ schema: actionablePointsSchema }),
         messages: [
             {
                 role: "user",
@@ -122,31 +124,6 @@ Rules:
         // Disable auto-retries: on 429 (rate limit), retrying just burns more quota
         maxRetries: 0,
     });
-    // Drain the object promise to prevent unhandled rejection
-    result.object.catch(() => { });
 
-    // Build the response stream manually instead of using toTextStreamResponse()
-    // which has a bug that double-closes the controller causing ERR_INVALID_STATE
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-        async start(controller) {
-            try {
-                for await (const chunk of result.textStream) {
-                    controller.enqueue(encoder.encode(chunk));
-                }
-            } catch {
-                // Stream interrupted (e.g. client disconnected) — ignore
-            } finally {
-                try {
-                    controller.close();
-                } catch {
-                    // Already closed — ignore
-                }
-            }
-        },
-    });
-
-    return new Response(stream, {
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    return result.toTextStreamResponse();
 }

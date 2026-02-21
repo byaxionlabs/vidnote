@@ -20,7 +20,7 @@ export async function POST(request: Request) {
         return new Response("Unauthorized", { status: 401 });
     }
 
-    const { url } = await request.json();
+    const { prompt: url } = await request.json();
 
     if (!url) {
         return new Response(JSON.stringify({ error: "URL is required" }), {
@@ -112,27 +112,5 @@ Use > blockquotes for notable quotes or hot takes from the video.`;
         maxRetries: 0,
     });
 
-    // Build the response stream
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-        async start(controller) {
-            try {
-                for await (const chunk of result.textStream) {
-                    controller.enqueue(encoder.encode(chunk));
-                }
-            } catch {
-                // Stream interrupted — ignore
-            } finally {
-                try {
-                    controller.close();
-                } catch {
-                    // Already closed — ignore
-                }
-            }
-        },
-    });
-
-    return new Response(stream, {
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    return result.toUIMessageStreamResponse();
 }

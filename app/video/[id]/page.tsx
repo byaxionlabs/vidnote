@@ -5,7 +5,7 @@ import { useSession } from "@/lib/auth-client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { experimental_useObject as useObject } from "@ai-sdk/react";
+import { experimental_useObject as useObject, useCompletion } from "@ai-sdk/react";
 import { actionablePointsSchema, type ActionablePoint } from "@/lib/schemas";
 import { loadApiKey } from "@/lib/api-key";
 import {
@@ -57,6 +57,7 @@ function formatTimestamp(seconds: number): string {
 function getPointKey(point: ActionablePoint | VideoPoint, index: number): string {
   return `${point.category}-${point.content.slice(0, 40)}-${index}`;
 }
+
 
 // ─── Simple Markdown Renderer ──────────────────────────────────────────────
 // Converts markdown text to React elements without external dependencies
@@ -278,10 +279,8 @@ function VideoContent({ id }: { id: string }) {
     "idle" | "streaming" | "saving" | "done" | "error"
   >("idle");
 
-  // Blog state
+  // Blog persistence state (the streaming text comes from useCompletion below)
   const [blogContent, setBlogContent] = useState<string | null>(null);
-  const [blogStreamingText, setBlogStreamingText] = useState("");
-  const [isBlogStreaming, setIsBlogStreaming] = useState(false);
   const [blogSaved, setBlogSaved] = useState(false);
 
   // Tab state
@@ -317,18 +316,15 @@ function VideoContent({ id }: { id: string }) {
   }, [loadUserApiKey]);
 
   // ── useObject for streaming AI extraction ──────────────────────────────
+  // The AI SDK's useObject hook handles incremental JSON parsing, partial
+  // object streaming, type safety, and render optimisation automatically.
 
   const { object, submit, stop } = useObject({
     api: "/api/stream",
     schema: actionablePointsSchema,
-    // Use custom fetch to inject the user's API key at call time
-    fetch: async (url, options) => {
-      const headers = new Headers(options?.headers);
-      if (userApiKeyRef.current) {
-        headers.set("x-gemini-api-key", userApiKeyRef.current);
-      }
-      return fetch(url, { ...options, headers });
-    },
+    headers: userApiKeyRef.current
+      ? { "x-gemini-api-key": userApiKeyRef.current }
+      : undefined,
     onFinish: async ({ object: finalObject, error: finishError }) => {
       if (finishError) {
         setError(finishError.message || "Failed to extract insights");
@@ -356,9 +352,7 @@ function VideoContent({ id }: { id: string }) {
         const saveRes = await fetch(`/api/videos/${id}/points`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            points: validPoints,
-          }),
+          body: JSON.stringify({ points: validPoints }),
         });
 
         if (!saveRes.ok) {
@@ -370,12 +364,10 @@ function VideoContent({ id }: { id: string }) {
 
         const saveData = await saveRes.json();
 
-        // Update local state with the saved points (real IDs from DB)
         setPoints(saveData.points);
         setExtractionPhase("done");
         setIsExtracting(false);
 
-        // Clean the URL by removing ?extract=true
         window.history.replaceState({}, "", `/video/${id}`);
       } catch {
         setError("Failed to save notes. Please try again.");
@@ -405,70 +397,38 @@ function VideoContent({ id }: { id: string }) {
     return lastValidPointsRef.current;
   }, [object?.points]);
 
-  // ── Blog streaming ────────────────────────────────────────────────────
+  // ── Blog streaming via useCompletion ──────────────────────────────────
+  // The AI SDK’s useCompletion hook handles text streaming, loading state,
+  // error handling, cancellation, and throttling automatically.
 
-  const startBlogStream = useCallback(async (youtubeUrl: string) => {
-    if (hasStartedBlogRef.current) return;
-    hasStartedBlogRef.current = true;
-    setIsBlogStreaming(true);
-    setBlogStreamingText("");
-
-    try {
-      const fetchHeaders: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (userApiKeyRef.current) {
-        fetchHeaders["x-gemini-api-key"] = userApiKeyRef.current;
-      }
-
-      const res = await fetch("/api/stream-blog", {
-        method: "POST",
-        headers: fetchHeaders,
-        body: JSON.stringify({ url: youtubeUrl }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: "Failed to stream blog" }));
-        console.error("Blog stream error:", errData.error);
-        setIsBlogStreaming(false);
-        return;
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) {
-        setIsBlogStreaming(false);
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let fullText = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        fullText += chunk;
-        setBlogStreamingText(fullText);
-      }
-
-      setIsBlogStreaming(false);
-      setBlogContent(fullText);
+  const {
+    completion: blogStreamingText,
+    complete: blogComplete,
+    isLoading: isBlogStreaming,
+  } = useCompletion({
+    api: "/api/stream-blog",
+    headers: userApiKeyRef.current
+      ? { "x-gemini-api-key": userApiKeyRef.current }
+      : undefined,
+    onFinish: async (_prompt, completion) => {
+      setBlogContent(completion);
 
       // Save the blog to the database
       try {
         await fetch(`/api/videos/${id}/blog`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blogContent: fullText }),
+          body: JSON.stringify({ blogContent: completion }),
         });
         setBlogSaved(true);
       } catch {
         console.error("Failed to save blog content");
       }
-    } catch {
-      setIsBlogStreaming(false);
-    }
-  }, [id]);
+    },
+    onError: (err) => {
+      console.error("Blog stream error:", err.message);
+    },
+  });
 
   // ── Derived data ───────────────────────────────────────────────────────
 
@@ -488,8 +448,8 @@ function VideoContent({ id }: { id: string }) {
   const completedCount = points.filter((p) => p.isCompleted).length;
   const progress = points.length > 0 ? (completedCount / points.length) * 100 : 0;
 
-  // The blog text to display — streaming or saved
-  const displayBlogText = isBlogStreaming ? blogStreamingText : blogContent;
+  // The blog text to display — streaming text while active, else saved content
+  const displayBlogText = blogStreamingText || blogContent;
 
   // ── Effects ────────────────────────────────────────────────────────────
 
@@ -551,9 +511,13 @@ function VideoContent({ id }: { id: string }) {
     setIsExtracting(true);
     setExtractionPhase("streaming");
 
-    // Pass the YouTube URL to both streaming APIs in parallel
+    // Fire both streams in parallel
     submit({ url: video.youtubeUrl });
-    startBlogStream(video.youtubeUrl);
+
+    if (!hasStartedBlogRef.current) {
+      hasStartedBlogRef.current = true;
+      blogComplete(video.youtubeUrl);
+    }
 
     return () => {
       stop();
@@ -883,16 +847,16 @@ function VideoContent({ id }: { id: string }) {
           <button
             onClick={() => setActiveTab("notes")}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "notes"
-                ? "bg-card text-foreground shadow-sm border border-border"
-                : "text-muted-foreground hover:text-foreground"
+              ? "bg-card text-foreground shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground"
               }`}
           >
             <FileText size={16} />
             Notes
             {totalDisplayPoints > 0 && (
               <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${activeTab === "notes"
-                  ? "bg-primary/15 text-primary"
-                  : "bg-muted text-muted-foreground"
+                ? "bg-primary/15 text-primary"
+                : "bg-muted text-muted-foreground"
                 }`}>
                 {totalDisplayPoints}
               </span>
@@ -901,8 +865,8 @@ function VideoContent({ id }: { id: string }) {
           <button
             onClick={() => setActiveTab("blog")}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "blog"
-                ? "bg-card text-foreground shadow-sm border border-border"
-                : "text-muted-foreground hover:text-foreground"
+              ? "bg-card text-foreground shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground"
               }`}
           >
             <BookOpen size={16} />
@@ -912,8 +876,8 @@ function VideoContent({ id }: { id: string }) {
             )}
             {!isBlogStreaming && displayBlogText && (
               <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${activeTab === "blog"
-                  ? "bg-primary/15 text-primary"
-                  : "bg-muted text-muted-foreground"
+                ? "bg-primary/15 text-primary"
+                : "bg-muted text-muted-foreground"
                 }`}>
                 ✓
               </span>
