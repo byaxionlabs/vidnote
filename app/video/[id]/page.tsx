@@ -24,6 +24,8 @@ import {
   Play,
   X,
   Video,
+  FileText,
+  BookOpen,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -55,6 +57,186 @@ function formatTimestamp(seconds: number): string {
 function getPointKey(point: ActionablePoint | VideoPoint, index: number): string {
   return `${point.category}-${point.content.slice(0, 40)}-${index}`;
 }
+
+// ─── Simple Markdown Renderer ──────────────────────────────────────────────
+// Converts markdown text to React elements without external dependencies
+
+function renderMarkdown(text: string): React.ReactNode[] {
+  const lines = text.split("\n");
+  const elements: React.ReactNode[] = [];
+  let inCodeBlock = false;
+  let codeBlockContent: string[] = [];
+  let codeBlockLang = "";
+  let listItems: React.ReactNode[] = [];
+  let inBlockquote = false;
+  let blockquoteContent: string[] = [];
+
+  const flushList = () => {
+    if (listItems.length > 0) {
+      elements.push(
+        <ul key={`list-${elements.length}`} className="blog-list">
+          {listItems}
+        </ul>
+      );
+      listItems = [];
+    }
+  };
+
+  const flushBlockquote = () => {
+    if (blockquoteContent.length > 0) {
+      elements.push(
+        <blockquote key={`bq-${elements.length}`} className="blog-blockquote">
+          {formatInline(blockquoteContent.join(" "))}
+        </blockquote>
+      );
+      blockquoteContent = [];
+      inBlockquote = false;
+    }
+  };
+
+  const formatInline = (text: string): React.ReactNode[] => {
+    const parts: React.ReactNode[] = [];
+    // Process bold, italic, inline code, and links
+    const regex = /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(text.slice(lastIndex, match.index));
+      }
+
+      if (match[2]) {
+        // Bold italic ***text***
+        parts.push(<strong key={match.index}><em>{match[2]}</em></strong>);
+      } else if (match[3]) {
+        // Bold **text**
+        parts.push(<strong key={match.index}>{match[3]}</strong>);
+      } else if (match[4]) {
+        // Italic *text*
+        parts.push(<em key={match.index}>{match[4]}</em>);
+      } else if (match[5]) {
+        // Inline code `code`
+        parts.push(<code key={match.index} className="blog-inline-code">{match[5]}</code>);
+      } else if (match[6] && match[7]) {
+        // Link [text](url)
+        parts.push(
+          <a key={match.index} href={match[7]} target="_blank" rel="noopener noreferrer" className="blog-link">
+            {match[6]}
+          </a>
+        );
+      }
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : [text];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Code blocks
+    if (line.trimStart().startsWith("```")) {
+      if (inCodeBlock) {
+        elements.push(
+          <pre key={`code-${elements.length}`} className="blog-code-block">
+            <div className="blog-code-lang">{codeBlockLang || "code"}</div>
+            <code>{codeBlockContent.join("\n")}</code>
+          </pre>
+        );
+        codeBlockContent = [];
+        codeBlockLang = "";
+        inCodeBlock = false;
+      } else {
+        flushList();
+        flushBlockquote();
+        inCodeBlock = true;
+        codeBlockLang = line.trim().slice(3).trim();
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBlockContent.push(line);
+      continue;
+    }
+
+    // Empty line
+    if (line.trim() === "") {
+      flushList();
+      flushBlockquote();
+      continue;
+    }
+
+    // Blockquote
+    if (line.trimStart().startsWith("> ")) {
+      flushList();
+      inBlockquote = true;
+      blockquoteContent.push(line.trimStart().slice(2));
+      continue;
+    } else if (inBlockquote) {
+      flushBlockquote();
+    }
+
+    // Headings
+    if (line.startsWith("### ")) {
+      flushList();
+      elements.push(
+        <h3 key={`h3-${i}`} className="blog-h3">{formatInline(line.slice(4))}</h3>
+      );
+      continue;
+    }
+    if (line.startsWith("## ")) {
+      flushList();
+      elements.push(
+        <h2 key={`h2-${i}`} className="blog-h2">{formatInline(line.slice(3))}</h2>
+      );
+      continue;
+    }
+
+    // Horizontal rule
+    if (line.trim() === "---" || line.trim() === "***") {
+      flushList();
+      elements.push(<hr key={`hr-${i}`} className="blog-hr" />);
+      continue;
+    }
+
+    // Unordered list
+    if (/^\s*[-*]\s/.test(line)) {
+      const content = line.replace(/^\s*[-*]\s/, "");
+      listItems.push(
+        <li key={`li-${i}`}>{formatInline(content)}</li>
+      );
+      continue;
+    }
+
+    // Ordered list
+    if (/^\s*\d+\.\s/.test(line)) {
+      const content = line.replace(/^\s*\d+\.\s/, "");
+      listItems.push(
+        <li key={`li-${i}`}>{formatInline(content)}</li>
+      );
+      continue;
+    }
+
+    // Regular paragraph
+    flushList();
+    elements.push(
+      <p key={`p-${i}`} className="blog-paragraph">{formatInline(line)}</p>
+    );
+  }
+
+  flushList();
+  flushBlockquote();
+
+  return elements;
+}
+
 
 // ─── Main Page (wraps with Suspense for useSearchParams) ───────────────────
 
@@ -96,6 +278,15 @@ function VideoContent({ id }: { id: string }) {
     "idle" | "streaming" | "saving" | "done" | "error"
   >("idle");
 
+  // Blog state
+  const [blogContent, setBlogContent] = useState<string | null>(null);
+  const [blogStreamingText, setBlogStreamingText] = useState("");
+  const [isBlogStreaming, setIsBlogStreaming] = useState(false);
+  const [blogSaved, setBlogSaved] = useState(false);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<"notes" | "blog">("notes");
+
   // Interaction state
   const [updatingPoint, setUpdatingPoint] = useState<string | null>(null);
   const [previewPoint, setPreviewPoint] = useState<VideoPoint | null>(null);
@@ -105,6 +296,7 @@ function VideoContent({ id }: { id: string }) {
   if (session) hasAuthenticatedRef.current = true;
 
   const hasStartedExtractionRef = useRef(false);
+  const hasStartedBlogRef = useRef(false);
 
   // ── BYOK: load user's API key ─────────────────────────────────────────
 
@@ -213,6 +405,71 @@ function VideoContent({ id }: { id: string }) {
     return lastValidPointsRef.current;
   }, [object?.points]);
 
+  // ── Blog streaming ────────────────────────────────────────────────────
+
+  const startBlogStream = useCallback(async (youtubeUrl: string) => {
+    if (hasStartedBlogRef.current) return;
+    hasStartedBlogRef.current = true;
+    setIsBlogStreaming(true);
+    setBlogStreamingText("");
+
+    try {
+      const fetchHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (userApiKeyRef.current) {
+        fetchHeaders["x-gemini-api-key"] = userApiKeyRef.current;
+      }
+
+      const res = await fetch("/api/stream-blog", {
+        method: "POST",
+        headers: fetchHeaders,
+        body: JSON.stringify({ url: youtubeUrl }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "Failed to stream blog" }));
+        console.error("Blog stream error:", errData.error);
+        setIsBlogStreaming(false);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        setIsBlogStreaming(false);
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let fullText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        fullText += chunk;
+        setBlogStreamingText(fullText);
+      }
+
+      setIsBlogStreaming(false);
+      setBlogContent(fullText);
+
+      // Save the blog to the database
+      try {
+        await fetch(`/api/videos/${id}/blog`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blogContent: fullText }),
+        });
+        setBlogSaved(true);
+      } catch {
+        console.error("Failed to save blog content");
+      }
+    } catch {
+      setIsBlogStreaming(false);
+    }
+  }, [id]);
+
   // ── Derived data ───────────────────────────────────────────────────────
 
   // Use streamed points while extracting, DB points when done
@@ -230,6 +487,9 @@ function VideoContent({ id }: { id: string }) {
 
   const completedCount = points.filter((p) => p.isCompleted).length;
   const progress = points.length > 0 ? (completedCount / points.length) * 100 : 0;
+
+  // The blog text to display — streaming or saved
+  const displayBlogText = isBlogStreaming ? blogStreamingText : blogContent;
 
   // ── Effects ────────────────────────────────────────────────────────────
 
@@ -253,6 +513,12 @@ function VideoContent({ id }: { id: string }) {
 
         const data = await res.json();
         setVideo(data.video);
+
+        // Load saved blog content if available
+        if (data.blogContent) {
+          setBlogContent(data.blogContent);
+          setBlogSaved(true);
+        }
 
         // Only set points from DB if we're not about to extract
         if (!shouldExtract || data.points.length > 0) {
@@ -285,8 +551,9 @@ function VideoContent({ id }: { id: string }) {
     setIsExtracting(true);
     setExtractionPhase("streaming");
 
-    // Pass the YouTube URL to the streaming API
+    // Pass the YouTube URL to both streaming APIs in parallel
     submit({ url: video.youtubeUrl });
+    startBlogStream(video.youtubeUrl);
 
     return () => {
       stop();
@@ -611,195 +878,317 @@ function VideoContent({ id }: { id: string }) {
           </div>
         </div>
 
-        {/* Insights Grid */}
-        {totalDisplayPoints > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Left Column - Action Items + Insights */}
-            <div className="space-y-8">
-              {groupedPoints.action.length > 0 && (
-                <section className="animate-in fade-in slide-in-from-left duration-500 delay-100">
-                  <div className="flex items-center gap-4 mb-5">
-                    <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center">
-                      <Target size={24} className="text-primary" />
-                    </div>
-                    <div className="flex-1">
-                      <h2 className="text-xl font-bold text-foreground">
-                        Action Items
-                      </h2>
-                      <p className="text-sm text-muted-foreground">
-                        Things to do
-                      </p>
-                    </div>
-                    <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-primary/10 text-primary border border-primary/30">
-                      {groupedPoints.action.length}
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    {groupedPoints.action.map((point, index) => (
-                      <PointCard
-                        key={getPointKey(point, index)}
-                        point={point}
-                        onToggle={
-                          "id" in point && !isExtracting
-                            ? () =>
-                              togglePoint(
-                                (point as VideoPoint).id,
-                                (point as VideoPoint).isCompleted,
-                              )
-                            : undefined
-                        }
-                        onPreview={
-                          "id" in point && !isExtracting
-                            ? () => setPreviewPoint(point as VideoPoint)
-                            : undefined
-                        }
-                        isUpdating={
-                          "id" in point
-                            ? updatingPoint === (point as VideoPoint).id
-                            : false
-                        }
-                        colorClass="primary"
-                        videoId={video.youtubeId}
-                        isStreaming={isExtracting}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
+        {/* ── Tab Switcher ───────────────────────────────────────────────── */}
+        <div className="flex items-center gap-1 mb-8 bg-muted/50 p-1 rounded-xl border border-border w-fit animate-in fade-in slide-in-from-bottom duration-500 delay-100">
+          <button
+            onClick={() => setActiveTab("notes")}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "notes"
+                ? "bg-card text-foreground shadow-sm border border-border"
+                : "text-muted-foreground hover:text-foreground"
+              }`}
+          >
+            <FileText size={16} />
+            Notes
+            {totalDisplayPoints > 0 && (
+              <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${activeTab === "notes"
+                  ? "bg-primary/15 text-primary"
+                  : "bg-muted text-muted-foreground"
+                }`}>
+                {totalDisplayPoints}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("blog")}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "blog"
+                ? "bg-card text-foreground shadow-sm border border-border"
+                : "text-muted-foreground hover:text-foreground"
+              }`}
+          >
+            <BookOpen size={16} />
+            Blog
+            {isBlogStreaming && (
+              <span className="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+            )}
+            {!isBlogStreaming && displayBlogText && (
+              <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${activeTab === "blog"
+                  ? "bg-primary/15 text-primary"
+                  : "bg-muted text-muted-foreground"
+                }`}>
+                ✓
+              </span>
+            )}
+          </button>
+        </div>
 
-              {groupedPoints.insight.length > 0 && (
-                <section className="animate-in fade-in slide-in-from-left duration-500 delay-300">
-                  <div className="flex items-center gap-4 mb-5">
-                    <div className="w-12 h-12 rounded-2xl bg-chart-3/10 border border-chart-3/30 flex items-center justify-center">
-                      <Lightbulb size={24} className="text-chart-3" />
-                    </div>
-                    <div className="flex-1">
-                      <h2 className="text-xl font-bold text-foreground">
-                        Insights
-                      </h2>
-                      <p className="text-sm text-muted-foreground">
-                        Aha moments
-                      </p>
-                    </div>
-                    <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-chart-3/10 text-chart-3 border border-chart-3/30">
-                      {groupedPoints.insight.length}
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    {groupedPoints.insight.map((point, index) => (
-                      <PointCard
-                        key={getPointKey(point, index)}
-                        point={point}
-                        onToggle={
-                          "id" in point && !isExtracting
-                            ? () =>
-                              togglePoint(
-                                (point as VideoPoint).id,
-                                (point as VideoPoint).isCompleted,
-                              )
-                            : undefined
-                        }
-                        onPreview={
-                          "id" in point && !isExtracting
-                            ? () => setPreviewPoint(point as VideoPoint)
-                            : undefined
-                        }
-                        isUpdating={
-                          "id" in point
-                            ? updatingPoint === (point as VideoPoint).id
-                            : false
-                        }
-                        colorClass="chart-3"
-                        videoId={video.youtubeId}
-                        isStreaming={isExtracting}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
+        {/* ── Notes Tab ──────────────────────────────────────────────────── */}
+        {activeTab === "notes" && (
+          <>
+            {/* Insights Grid */}
+            {totalDisplayPoints > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-300">
+                {/* Left Column - Action Items + Insights */}
+                <div className="space-y-8">
+                  {groupedPoints.action.length > 0 && (
+                    <section className="animate-in fade-in slide-in-from-left duration-500 delay-100">
+                      <div className="flex items-center gap-4 mb-5">
+                        <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center">
+                          <Target size={24} className="text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <h2 className="text-xl font-bold text-foreground">
+                            Action Items
+                          </h2>
+                          <p className="text-sm text-muted-foreground">
+                            Things to do
+                          </p>
+                        </div>
+                        <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-primary/10 text-primary border border-primary/30">
+                          {groupedPoints.action.length}
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {groupedPoints.action.map((point, index) => (
+                          <PointCard
+                            key={getPointKey(point, index)}
+                            point={point}
+                            onToggle={
+                              "id" in point && !isExtracting
+                                ? () =>
+                                  togglePoint(
+                                    (point as VideoPoint).id,
+                                    (point as VideoPoint).isCompleted,
+                                  )
+                                : undefined
+                            }
+                            onPreview={
+                              "id" in point && !isExtracting
+                                ? () => setPreviewPoint(point as VideoPoint)
+                                : undefined
+                            }
+                            isUpdating={
+                              "id" in point
+                                ? updatingPoint === (point as VideoPoint).id
+                                : false
+                            }
+                            colorClass="primary"
+                            videoId={video.youtubeId}
+                            isStreaming={isExtracting}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  )}
 
-            {/* Right Column - Key Takeaways */}
-            <div className="space-y-8">
-              {groupedPoints.remember.length > 0 && (
-                <section className="animate-in fade-in slide-in-from-right duration-500 delay-200">
-                  <div className="flex items-center gap-4 mb-5">
-                    <div className="w-12 h-12 rounded-2xl bg-chart-2/10 border border-chart-2/30 flex items-center justify-center">
-                      <Brain size={24} className="text-chart-2" />
-                    </div>
-                    <div className="flex-1">
-                      <h2 className="text-xl font-bold text-foreground">
-                        Key Takeaways
-                      </h2>
-                      <p className="text-sm text-muted-foreground">
-                        Remember these
-                      </p>
-                    </div>
-                    <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-chart-2/10 text-chart-2 border border-chart-2/30">
-                      {groupedPoints.remember.length}
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    {groupedPoints.remember.map((point, index) => (
-                      <PointCard
-                        key={getPointKey(point, index)}
-                        point={point}
-                        onToggle={
-                          "id" in point && !isExtracting
-                            ? () =>
-                              togglePoint(
-                                (point as VideoPoint).id,
-                                (point as VideoPoint).isCompleted,
-                              )
-                            : undefined
-                        }
-                        onPreview={
-                          "id" in point && !isExtracting
-                            ? () => setPreviewPoint(point as VideoPoint)
-                            : undefined
-                        }
-                        isUpdating={
-                          "id" in point
-                            ? updatingPoint === (point as VideoPoint).id
-                            : false
-                        }
-                        colorClass="chart-2"
-                        videoId={video.youtubeId}
-                        isStreaming={isExtracting}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
-          </div>
+                  {groupedPoints.insight.length > 0 && (
+                    <section className="animate-in fade-in slide-in-from-left duration-500 delay-300">
+                      <div className="flex items-center gap-4 mb-5">
+                        <div className="w-12 h-12 rounded-2xl bg-chart-3/10 border border-chart-3/30 flex items-center justify-center">
+                          <Lightbulb size={24} className="text-chart-3" />
+                        </div>
+                        <div className="flex-1">
+                          <h2 className="text-xl font-bold text-foreground">
+                            Insights
+                          </h2>
+                          <p className="text-sm text-muted-foreground">
+                            Aha moments
+                          </p>
+                        </div>
+                        <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-chart-3/10 text-chart-3 border border-chart-3/30">
+                          {groupedPoints.insight.length}
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {groupedPoints.insight.map((point, index) => (
+                          <PointCard
+                            key={getPointKey(point, index)}
+                            point={point}
+                            onToggle={
+                              "id" in point && !isExtracting
+                                ? () =>
+                                  togglePoint(
+                                    (point as VideoPoint).id,
+                                    (point as VideoPoint).isCompleted,
+                                  )
+                                : undefined
+                            }
+                            onPreview={
+                              "id" in point && !isExtracting
+                                ? () => setPreviewPoint(point as VideoPoint)
+                                : undefined
+                            }
+                            isUpdating={
+                              "id" in point
+                                ? updatingPoint === (point as VideoPoint).id
+                                : false
+                            }
+                            colorClass="chart-3"
+                            videoId={video.youtubeId}
+                            isStreaming={isExtracting}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </div>
+
+                {/* Right Column - Key Takeaways */}
+                <div className="space-y-8">
+                  {groupedPoints.remember.length > 0 && (
+                    <section className="animate-in fade-in slide-in-from-right duration-500 delay-200">
+                      <div className="flex items-center gap-4 mb-5">
+                        <div className="w-12 h-12 rounded-2xl bg-chart-2/10 border border-chart-2/30 flex items-center justify-center">
+                          <Brain size={24} className="text-chart-2" />
+                        </div>
+                        <div className="flex-1">
+                          <h2 className="text-xl font-bold text-foreground">
+                            Key Takeaways
+                          </h2>
+                          <p className="text-sm text-muted-foreground">
+                            Remember these
+                          </p>
+                        </div>
+                        <span className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full bg-chart-2/10 text-chart-2 border border-chart-2/30">
+                          {groupedPoints.remember.length}
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {groupedPoints.remember.map((point, index) => (
+                          <PointCard
+                            key={getPointKey(point, index)}
+                            point={point}
+                            onToggle={
+                              "id" in point && !isExtracting
+                                ? () =>
+                                  togglePoint(
+                                    (point as VideoPoint).id,
+                                    (point as VideoPoint).isCompleted,
+                                  )
+                                : undefined
+                            }
+                            onPreview={
+                              "id" in point && !isExtracting
+                                ? () => setPreviewPoint(point as VideoPoint)
+                                : undefined
+                            }
+                            isUpdating={
+                              "id" in point
+                                ? updatingPoint === (point as VideoPoint).id
+                                : false
+                            }
+                            colorClass="chart-2"
+                            videoId={video.youtubeId}
+                            isStreaming={isExtracting}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Empty state while streaming with no points yet */}
+            {totalDisplayPoints === 0 && showStreamingUI && (
+              <div className="text-center py-16">
+                <Loader2
+                  size={48}
+                  className="animate-spin text-primary mx-auto mb-4"
+                />
+                <p className="text-muted-foreground text-lg">
+                  Watching the video and extracting insights...
+                </p>
+                <p className="text-muted-foreground text-sm mt-2">
+                  This may take a moment for longer videos
+                </p>
+              </div>
+            )}
+
+            {/* Empty state for saved video with no points */}
+            {totalDisplayPoints === 0 && !isExtracting && !loading && (
+              <div className="text-center py-16 animate-in fade-in duration-500">
+                <div className="w-20 h-20 rounded-2xl bg-card border-2 border-dashed border-border flex items-center justify-center mx-auto mb-4">
+                  <Zap size={32} className="text-muted-foreground" />
+                </div>
+                <p className="text-muted-foreground text-lg">
+                  No notes found for this video.
+                </p>
+              </div>
+            )}
+          </>
         )}
 
-        {/* Empty state while streaming with no points yet */}
-        {totalDisplayPoints === 0 && showStreamingUI && (
-          <div className="text-center py-16">
-            <Loader2
-              size={48}
-              className="animate-spin text-primary mx-auto mb-4"
-            />
-            <p className="text-muted-foreground text-lg">
-              Watching the video and extracting insights...
-            </p>
-            <p className="text-muted-foreground text-sm mt-2">
-              This may take a moment for longer videos
-            </p>
-          </div>
-        )}
-
-        {/* Empty state for saved video with no points */}
-        {totalDisplayPoints === 0 && !isExtracting && !loading && (
-          <div className="text-center py-16 animate-in fade-in duration-500">
-            <div className="w-20 h-20 rounded-2xl bg-card border-2 border-dashed border-border flex items-center justify-center mx-auto mb-4">
-              <Zap size={32} className="text-muted-foreground" />
-            </div>
-            <p className="text-muted-foreground text-lg">
-              No notes found for this video.
-            </p>
+        {/* ── Blog Tab ───────────────────────────────────────────────────── */}
+        {activeTab === "blog" && (
+          <div className="animate-in fade-in duration-300">
+            {/* Blog streaming / content */}
+            {displayBlogText ? (
+              <div className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
+                {/* Blog header bar */}
+                <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center">
+                      <BookOpen size={20} className="text-primary" />
+                    </div>
+                    <div>
+                      <h2 className="font-semibold text-foreground text-lg">
+                        In-Depth Article
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {isBlogStreaming
+                          ? "AI is writing the article..."
+                          : blogSaved
+                            ? "Generated by AI • Saved"
+                            : "Generated by AI"}
+                      </p>
+                    </div>
+                  </div>
+                  {isBlogStreaming && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary text-xs font-bold rounded-full border border-primary/30">
+                      <Loader2 size={14} className="animate-spin" />
+                      Writing...
+                    </div>
+                  )}
+                </div>
+                {/* Blog body */}
+                <div className="px-6 sm:px-10 py-8 blog-content">
+                  {renderMarkdown(displayBlogText)}
+                  {isBlogStreaming && (
+                    <span className="inline-block w-2 h-5 bg-primary rounded-sm animate-pulse ml-0.5 align-text-bottom"></span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Blog empty / loading state */
+              <div className="text-center py-16 animate-in fade-in duration-500">
+                {isBlogStreaming ? (
+                  <>
+                    <Loader2
+                      size={48}
+                      className="animate-spin text-primary mx-auto mb-4"
+                    />
+                    <p className="text-muted-foreground text-lg">
+                      AI is writing an in-depth article...
+                    </p>
+                    <p className="text-muted-foreground text-sm mt-2">
+                      This may take a moment
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-20 h-20 rounded-2xl bg-card border-2 border-dashed border-border flex items-center justify-center mx-auto mb-4">
+                      <BookOpen size={32} className="text-muted-foreground" />
+                    </div>
+                    <p className="text-muted-foreground text-lg">
+                      No blog article has been generated yet.
+                    </p>
+                    <p className="text-muted-foreground text-sm mt-2">
+                      Blog articles are generated alongside notes when you extract a video.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
       </main>
