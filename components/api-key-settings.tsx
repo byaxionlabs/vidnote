@@ -17,6 +17,7 @@ import {
     loadApiKey,
     clearApiKey,
     maskApiKey,
+    isValidApiKeyFormat,
 } from "@/lib/api-key";
 
 interface ApiKeySettingsProps {
@@ -55,11 +56,11 @@ export function ApiKeySettings({ userId, isOpen, onClose }: ApiKeySettingsProps)
         setStatus("idle");
 
         try {
-            // Basic validation
+            // Format validation
             const trimmedKey = apiKey.trim();
-            if (trimmedKey && !trimmedKey.startsWith("AIza")) {
+            if (trimmedKey && !isValidApiKeyFormat(trimmedKey)) {
                 setStatus("error");
-                setStatusMessage("Invalid key format. Gemini API keys typically start with 'AIza'.");
+                setStatusMessage("Invalid key format. Gemini API keys start with 'AIzaSy' and are 39 characters long.");
                 setSaving(false);
                 return;
             }
@@ -231,8 +232,8 @@ export function ApiKeySettings({ userId, isOpen, onClose }: ApiKeySettingsProps)
 
                 {/* Info Text */}
                 <p className="text-xs text-muted-foreground text-center mt-4 leading-relaxed">
-                    Without a personal key, the default shared key is used (subject to rate limits).
-                    Your own key gives you unlimited, unthrottled access.
+                    A Gemini API key is required to extract notes.
+                    Get a free key from Google AI Studio above.
                 </p>
             </div>
         </div>

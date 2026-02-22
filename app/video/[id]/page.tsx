@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, use, useCallback, Suspense } from "react";
+import hljs from "highlight.js";
+import "highlight.js/styles/github-dark.min.css";
 import { useSession } from "@/lib/auth-client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -8,6 +10,7 @@ import Image from "next/image";
 import { experimental_useObject as useObject, useCompletion } from "@ai-sdk/react";
 import { actionablePointsSchema, type ActionablePoint } from "@/lib/schemas";
 import { loadApiKey } from "@/lib/api-key";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   ExternalLink,
@@ -26,6 +29,7 @@ import {
   Video,
   FileText,
   BookOpen,
+  AlertTriangle,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -56,6 +60,30 @@ function formatTimestamp(seconds: number): string {
 
 function getPointKey(point: ActionablePoint | VideoPoint, index: number): string {
   return `${point.category}-${point.content.slice(0, 40)}-${index}`;
+}
+
+// ─── Highlighted Code Block Component ──────────────────────────────────────
+// Uses highlight.js for syntax highlighting with a ref to avoid SSR issues
+
+function HighlightedCode({ code, language }: { code: string; language: string }) {
+  const codeRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (codeRef.current) {
+      // Reset any previous highlighting
+      codeRef.current.removeAttribute("data-highlighted");
+      hljs.highlightElement(codeRef.current);
+    }
+  }, [code, language]);
+
+  return (
+    <pre className="blog-code-block">
+      <div className="blog-code-lang">{language || "code"}</div>
+      <code ref={codeRef} className={language ? `language-${language}` : ""}>
+        {code}
+      </code>
+    </pre>
+  );
 }
 
 
@@ -144,11 +172,11 @@ function renderMarkdown(text: string): React.ReactNode[] {
     // Code blocks
     if (line.trimStart().startsWith("```")) {
       if (inCodeBlock) {
+        const codeKey = `code-${elements.length}`;
+        const codeLang = codeBlockLang;
+        const codeText = codeBlockContent.join("\n");
         elements.push(
-          <pre key={`code-${elements.length}`} className="blog-code-block">
-            <div className="blog-code-lang">{codeBlockLang || "code"}</div>
-            <code>{codeBlockContent.join("\n")}</code>
-          </pre>
+          <HighlightedCode key={codeKey} code={codeText} language={codeLang} />
         );
         codeBlockContent = [];
         codeBlockLang = "";
@@ -289,6 +317,9 @@ function VideoContent({ id }: { id: string }) {
   // Interaction state
   const [updatingPoint, setUpdatingPoint] = useState<string | null>(null);
   const [previewPoint, setPreviewPoint] = useState<VideoPoint | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   // Auth tracking
   const hasAuthenticatedRef = useRef(false);
@@ -375,7 +406,27 @@ function VideoContent({ id }: { id: string }) {
       }
     },
     onError: (err) => {
-      setError(err.message || "Failed to extract insights");
+      // Parse error for user-friendly messages
+      const msg = err.message || "";
+      let errorMsg: string;
+      if (msg.includes("429") || msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("quota")) {
+        errorMsg = "Rate limit reached. The Gemini API free tier has usage limits. Please wait a minute and try again.";
+        toast.error("Rate limit reached", {
+          description: "The Gemini API free tier has usage limits. Please wait a minute and try again.",
+        });
+      } else if (msg.includes("API key")) {
+        errorMsg = msg;
+        toast.error("API key error", { description: msg });
+      } else if (msg.includes("401") || msg.includes("403") || msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("invalid")) {
+        errorMsg = "Your API key appears to be invalid. Please check your key in the API Key settings on the dashboard.";
+        toast.error("Invalid API key", {
+          description: "Please check your key in the API Key settings on the dashboard.",
+        });
+      } else {
+        errorMsg = msg || "Failed to extract insights. Please try again.";
+        toast.error("Extraction failed", { description: errorMsg });
+      }
+      setError(errorMsg);
       setExtractionPhase("error");
     },
   });
@@ -426,7 +477,16 @@ function VideoContent({ id }: { id: string }) {
       }
     },
     onError: (err) => {
-      console.error("Blog stream error:", err.message);
+      const msg = err.message || "";
+      if (msg.includes("429") || msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("quota")) {
+        toast.error("Blog rate limited", {
+          description: "Rate limit reached for blog generation. Try again later.",
+        });
+      } else {
+        toast.error("Blog generation failed", {
+          description: msg || "Something went wrong while generating the blog article.",
+        });
+      }
     },
   });
 
@@ -548,25 +608,25 @@ function VideoContent({ id }: { id: string }) {
   };
 
   const handleDelete = async () => {
-    if (
-      !confirm("Are you sure you want to delete this video and all its notes?")
-    ) {
-      return;
-    }
+    setDeleting(true);
+    setDeleteError("");
     try {
       const res = await fetch(`/api/videos/${id}`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Failed to delete video");
       }
+      toast.success("Video deleted", {
+        description: "The video and all its notes have been removed.",
+      });
       router.push("/dashboard");
     } catch (err) {
       console.error("Error deleting video:", err);
-      alert(
-        err instanceof Error
-          ? err.message
-          : "Failed to delete video. Please try again.",
-      );
+      const errMsg = err instanceof Error ? err.message : "Failed to delete video. Please try again.";
+      setDeleteError(errMsg);
+      toast.error("Failed to delete", { description: errMsg });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -675,7 +735,7 @@ function VideoContent({ id }: { id: string }) {
               <ThemeToggle />
               {!isExtracting && (
                 <button
-                  onClick={handleDelete}
+                  onClick={() => setShowDeleteModal(true)}
                   className="w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10 transition-all"
                   title="Delete Video"
                 >
@@ -1213,6 +1273,67 @@ function VideoContent({ id }: { id: string }) {
                   </span>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-background/80 backdrop-blur-md"
+            onClick={() => { setShowDeleteModal(false); setDeleteError(""); }}
+          ></div>
+          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+            <button
+              onClick={() => { setShowDeleteModal(false); setDeleteError(""); }}
+              className="absolute top-5 right-5 w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/30 mb-4">
+                <AlertTriangle size={28} className="text-destructive" />
+              </div>
+              <h2 className="text-2xl font-bold text-foreground mb-2">Delete Video?</h2>
+              <p className="text-muted-foreground text-sm">
+                This will permanently delete this video and all its extracted notes. This action cannot be undone.
+              </p>
+            </div>
+
+            {deleteError && (
+              <div className="mb-5 p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm animate-in fade-in duration-200 flex items-center gap-2">
+                <AlertTriangle size={16} className="shrink-0" />
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowDeleteModal(false); setDeleteError(""); }}
+                className="flex-1 px-6 py-3.5 border border-border rounded-xl text-foreground font-medium hover:bg-accent transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 bg-destructive text-destructive-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-60 disabled:pointer-events-none"
+              >
+                {deleting ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={18} />
+                    Delete
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

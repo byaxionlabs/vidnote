@@ -1,5 +1,5 @@
 import { streamText, Output } from "ai";
-import { google, createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { actionablePointsSchema } from "@/lib/schemas";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
@@ -90,13 +90,17 @@ Rules:
 
     console.log(`[API/stream] Gemini request for video: ${videoId} at ${new Date().toISOString()}`);
 
-    // Check for user-provided API key (BYOK)
+    // Require user-provided API key (BYOK only)
     const userApiKey = request.headers.get("x-gemini-api-key");
 
-    // Use user's key if provided, otherwise fall back to env key
-    const googleProvider = userApiKey
-        ? createGoogleGenerativeAI({ apiKey: userApiKey })
-        : google;
+    if (!userApiKey) {
+        return new Response(
+            JSON.stringify({ error: "API key is required. Please add your Gemini API key in the API Key settings on the dashboard." }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+    }
+
+    const googleProvider = createGoogleGenerativeAI({ apiKey: userApiKey });
 
     const result = streamText({
         // gemini-2.0-flash has much higher free tier limits than gemini-2.5-pro

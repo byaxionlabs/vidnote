@@ -20,10 +20,12 @@ import {
   LayoutGrid,
   User,
   Key,
+  AlertTriangle,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ApiKeySettings } from "@/components/api-key-settings";
-import { hasStoredApiKey } from "@/lib/api-key";
+import { hasStoredApiKey, loadApiKey, isValidApiKeyFormat } from "@/lib/api-key";
+import { toast } from "sonner";
 
 interface VideoItem {
   id: string;
@@ -43,6 +45,8 @@ export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
 
@@ -75,6 +79,23 @@ export default function Dashboard() {
 
   const [submitting, setSubmitting] = useState(false);
 
+  // Check API key before showing the modal
+  const handleAddVideoClick = () => {
+    if (!hasStoredApiKey()) {
+      toast.error("API key required", {
+        description: "Please add your Gemini API key before extracting notes.",
+        action: {
+          label: "Add Key",
+          onClick: () => setShowApiKeyModal(true),
+        },
+      });
+      return;
+    }
+    setShowModal(true);
+    setError("");
+    setUrl("");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) {
@@ -85,7 +106,56 @@ export default function Dashboard() {
     setSubmitting(true);
 
     try {
-      // Validate + create the video record (without points)
+      // Step 1: Load and validate the API key format
+      const apiKey = await loadApiKey(session!.user.id);
+      if (!apiKey) {
+        toast.error("API key not found", {
+          description: "Please add your Gemini API key in settings.",
+          action: {
+            label: "Add Key",
+            onClick: () => { setShowModal(false); setShowApiKeyModal(true); },
+          },
+        });
+        setSubmitting(false);
+        return;
+      }
+
+      if (!isValidApiKeyFormat(apiKey)) {
+        toast.error("Invalid API key format", {
+          description: "Your saved key doesn't match the expected Gemini API key format. Please update it.",
+          action: {
+            label: "Update Key",
+            onClick: () => { setShowModal(false); setShowApiKeyModal(true); },
+          },
+        });
+        setSubmitting(false);
+        return;
+      }
+
+      // Step 2: Validate the API key with Google
+      const validateRes = await fetch("/api/validate-key", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-gemini-api-key": apiKey,
+        },
+      });
+
+      const validateData = await validateRes.json();
+
+      if (!validateData.valid) {
+        toast.error("API key validation failed", {
+          description: validateData.error || "Your API key is invalid. Please check and update it.",
+          action: {
+            label: "Update Key",
+            onClick: () => { setShowModal(false); setShowApiKeyModal(true); },
+          },
+        });
+        setSubmitting(false);
+        return;
+      }
+
+      // Step 3: Create the video record
       const res = await fetch("/api/videos/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -101,22 +171,24 @@ export default function Dashboard() {
       }
 
       // Navigate to the video page with extract flag — streaming happens there
+      toast.success("Video added!", {
+        description: "Extracting notes now...",
+      });
       setShowModal(false);
       router.push(`/video/${data.video.id}?extract=true`);
       setUrl("");
     } catch {
-      setError("Something went wrong. Please try again.");
+      toast.error("Network error", {
+        description: "Something went wrong. Please check your connection and try again.",
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this video and all its notes?")) {
-      return;
-    }
-
     setDeletingId(id);
+    setDeleteError("");
     try {
       const res = await fetch(`/api/videos/${id}`, { method: "DELETE" });
 
@@ -126,9 +198,16 @@ export default function Dashboard() {
       }
 
       setVideos(videos.filter((v) => v.id !== id));
+      setDeleteConfirmId(null);
+      toast.success("Video deleted", {
+        description: "The video and all its notes have been removed.",
+      });
     } catch (err) {
       console.error("Error deleting video:", err);
-      alert(err instanceof Error ? err.message : "Failed to delete video. Please try again.");
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete video. Please try again.");
+      toast.error("Failed to delete", {
+        description: err instanceof Error ? err.message : "Something went wrong. Please try again.",
+      });
     } finally {
       setDeletingId(null);
     }
@@ -192,7 +271,7 @@ export default function Dashboard() {
         </nav>
 
         {/* User Section */}
-        <div className="p-4 border-t border-border">
+        <div className="py-4 px-2 border-t border-border">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center">
@@ -260,7 +339,7 @@ export default function Dashboard() {
               </p>
             </div>
             <button
-              onClick={() => setShowModal(true)}
+              onClick={handleAddVideoClick}
               className="inline-flex items-center gap-2 px-6 py-3.5 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-105 transition-all animate-in fade-in slide-in-from-right duration-500"
             >
               <Plus size={20} />
@@ -296,7 +375,7 @@ export default function Dashboard() {
                 Add your first video from <span className="text-primary font-medium">@t3dotgg</span> to start extracting insights
               </p>
               <button
-                onClick={() => setShowModal(true)}
+                onClick={handleAddVideoClick}
                 className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all"
               >
                 <Plus size={20} />
@@ -308,10 +387,10 @@ export default function Dashboard() {
               {videos.map((video, index) => (
                 <div
                   key={video.id}
-                  className="bg-card border border-border rounded-2xl overflow-hidden group hover:shadow-xl hover:border-primary/50 transition-all duration-300 animate-in fade-in slide-in-from-bottom duration-500"
+                  className="bg-card border border-border rounded-2xl overflow-hidden group hover:shadow-xl hover:border-primary/50 transition-all duration-300 animate-in fade-in slide-in-from-bottom duration-500 flex flex-col"
                   style={{ animationDelay: `${index * 50}ms` }}
                 >
-                  <Link href={`/video/${video.id}`} className="block">
+                  <Link href={`/video/${video.id}`} className="flex-1 flex flex-col">
                     <div className="relative overflow-hidden">
                       <Image
                         src={video.thumbnailUrl}
@@ -328,11 +407,11 @@ export default function Dashboard() {
                         </span>
                       </div>
                     </div>
-                    <div className="p-5">
+                    <div className="p-5 flex-1 flex flex-col">
                       <h3 className="font-semibold line-clamp-2 mb-3 group-hover:text-primary transition-colors text-lg text-foreground leading-snug">
                         {video.title || "Untitled Video"}
                       </h3>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground mt-auto">
                         <Clock size={14} />
                         {new Date(video.createdAt).toLocaleDateString('en-US', {
                           month: 'short',
@@ -342,7 +421,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                   </Link>
-                  <div className="px-5 pb-5 flex gap-2">
+                  <div className="px-5 pb-5 flex gap-2 mt-auto">
                     <a
                       href={video.youtubeUrl}
                       target="_blank"
@@ -356,7 +435,7 @@ export default function Dashboard() {
                     <button
                       onClick={(e) => {
                         e.preventDefault();
-                        handleDelete(video.id);
+                        setDeleteConfirmId(video.id);
                       }}
                       disabled={deletingId === video.id}
                       className="w-11 h-11 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10 transition-all"
@@ -443,6 +522,66 @@ export default function Dashboard() {
                 )}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-background/80 backdrop-blur-md"
+            onClick={() => { setDeleteConfirmId(null); setDeleteError(""); }}
+          ></div>
+          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+            <button
+              onClick={() => { setDeleteConfirmId(null); setDeleteError(""); }}
+              className="absolute top-5 right-5 w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/30 mb-4">
+                <AlertTriangle size={28} className="text-destructive" />
+              </div>
+              <h2 className="text-2xl font-bold text-foreground mb-2">Delete Video?</h2>
+              <p className="text-muted-foreground text-sm">
+                This will permanently delete this video and all its extracted notes. This action cannot be undone.
+              </p>
+            </div>
+
+            {deleteError && (
+              <div className="mb-5 p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm animate-in fade-in duration-200 flex items-center gap-2">
+                <AlertTriangle size={16} className="shrink-0" />
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setDeleteConfirmId(null); setDeleteError(""); }}
+                className="flex-1 px-6 py-3.5 border border-border rounded-xl text-foreground font-medium hover:bg-accent transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(deleteConfirmId)}
+                disabled={deletingId === deleteConfirmId}
+                className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 bg-destructive text-destructive-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-60 disabled:pointer-events-none"
+              >
+                {deletingId === deleteConfirmId ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={18} />
+                    Delete
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

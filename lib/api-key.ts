@@ -94,3 +94,9 @@ export function maskApiKey(key: string): string {
     if (key.length <= 12) return "••••••••";
     return key.slice(0, 8) + "••••" + key.slice(-4);
 }
+
+// Validate API key format: Gemini keys start with "AIzaSy" and are 39 chars
+// Examples: AIzaSyBXE85u8CAR9uYpqBQ7LvZ9sD1oGOvnwl8, AIzaSyDILsF0ER6WihahuyIEeW6DyYIFaHeXqsU
+export function isValidApiKeyFormat(key: string): boolean {
+    return /^AIzaSy[A-Za-z0-9_-]{33}$/.test(key);
+}

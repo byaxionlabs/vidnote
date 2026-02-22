@@ -1,5 +1,5 @@
 import { streamText } from "ai";
-import { google, createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import {
@@ -83,13 +83,17 @@ Use > blockquotes for notable quotes or hot takes from the video.`;
 
     console.log(`[API/stream-blog] Gemini request for video: ${videoId} at ${new Date().toISOString()}`);
 
-    // Check for user-provided API key (BYOK)
+    // Require user-provided API key (BYOK only)
     const userApiKey = request.headers.get("x-gemini-api-key");
 
-    // Use user's key if provided, otherwise fall back to env key
-    const googleProvider = userApiKey
-        ? createGoogleGenerativeAI({ apiKey: userApiKey })
-        : google;
+    if (!userApiKey) {
+        return new Response(
+            JSON.stringify({ error: "API key is required. Please add your Gemini API key in the API Key settings on the dashboard." }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+    }
+
+    const googleProvider = createGoogleGenerativeAI({ apiKey: userApiKey });
 
     const result = streamText({
         model: googleProvider("gemini-3-flash-preview"),
