@@ -327,7 +327,7 @@ h1, h2, h3, h4, h5, h6, .font-serif {
 
 .blog-code-block {
   position: relative;
-  background: var(--card);
+  background: oklch(0.20 0.02 280);
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   padding: 1.25rem;
@@ -337,7 +337,21 @@ h1, h2, h3, h4, h5, h6, .font-serif {
   font-family: var(--font-mono);
   font-size: 0.85rem;
   line-height: 1.65;
-  color: var(--foreground);
+  color: oklch(0.90 0.01 280);
+}
+
+.blog-code-block code {
+  background: transparent !important;
+  padding: 0 !important;
+  border: none !important;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Override highlight.js background so it inherits from our container */
+.blog-code-block code.hljs {
+  background: transparent !important;
+  padding: 0 !important;
 }
 
 .blog-code-lang {

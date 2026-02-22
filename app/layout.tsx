@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "Theo-Notes - Actionable Insights from Theo's Videos",
@@ -36,7 +37,18 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body className="antialiased">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          {children}
+          <Toaster
+            position="top-right"
+            richColors
+            toastOptions={{
+              style: {
+                fontFamily: "var(--font-sans)",
+              },
+            }}
+          />
+        </ThemeProvider>
       </body>
     </html>
   );
