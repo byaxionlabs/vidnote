@@ -51,3 +51,44 @@ export async function POST(
         );
     }
 }
+
+export async function DELETE(
+    _request: NextRequest,
+    { params }: { params: Promise<{ id: string }> },
+) {
+    try {
+        const session = await auth.api.getSession({
+            headers: await headers(),
+        });
+
+        if (!session?.user) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const { id } = await params;
+
+        // Verify the video belongs to the user
+        const [video] = await db
+            .select()
+            .from(videos)
+            .where(and(eq(videos.id, id), eq(videos.userId, session.user.id)));
+
+        if (!video) {
+            return NextResponse.json({ error: "Video not found" }, { status: 404 });
+        }
+
+        // Clear blog content
+        await db
+            .update(videos)
+            .set({ blogContent: null, updatedAt: new Date() })
+            .where(eq(videos.id, id));
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error("Error deleting blog:", error);
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : "Failed to delete blog" },
+            { status: 500 },
+        );
+    }
+}

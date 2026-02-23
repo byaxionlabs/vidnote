@@ -30,6 +30,7 @@ import {
   FileText,
   BookOpen,
   AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -715,6 +716,46 @@ function VideoContent({ id }: { id: string }) {
     }
   };
 
+  // Regenerate: clear existing data and re-run extraction
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const handleRegenerate = async () => {
+    if (!video || !userApiKey) return;
+
+    setIsRegenerating(true);
+    setError("");
+    setExtractionPhase("streaming");
+    setIsExtracting(true);
+
+    // Delete existing points from DB
+    try {
+      if (points.length > 0) {
+        await fetch(`/api/videos/${id}/points`, { method: "DELETE" });
+      }
+      // Clear blog from DB
+      if (blogContent) {
+        await fetch(`/api/videos/${id}/blog`, { method: "DELETE" });
+      }
+    } catch {
+      // Continue even if cleanup fails — we'll overwrite anyway
+    }
+
+    // Reset local state
+    setPoints([]);
+    setBlogContent(null);
+    setBlogSaved(false);
+
+    // Reset refs so streams can fire again
+    hasStartedExtractionRef.current = false;
+    hasStartedBlogRef.current = false;
+
+    // Fire both streams
+    notesComplete(video.youtubeUrl);
+    blogComplete(video.youtubeUrl);
+
+    setIsRegenerating(false);
+  };
+
   // ── Early returns ──────────────────────────────────────────────────────
 
   // Auth loading — only on initial load
@@ -987,47 +1028,62 @@ function VideoContent({ id }: { id: string }) {
           </div>
         </div>
 
-        {/* ── Tab Switcher ───────────────────────────────────────────────── */}
-        <div className="flex items-center gap-1 mb-8 bg-muted/50 p-1 rounded-xl border border-border w-fit animate-in fade-in slide-in-from-bottom duration-500 delay-100">
-          <button
-            onClick={() => setActiveTab("notes")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "notes"
-              ? "bg-card text-foreground shadow-sm border border-border"
-              : "text-muted-foreground hover:text-foreground"
-              }`}
-          >
-            <FileText size={16} />
-            Notes
-            {totalDisplayPoints > 0 && (
-              <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${activeTab === "notes"
-                ? "bg-primary/15 text-primary"
-                : "bg-muted text-muted-foreground"
-                }`}>
-                {totalDisplayPoints}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("blog")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "blog"
-              ? "bg-card text-foreground shadow-sm border border-border"
-              : "text-muted-foreground hover:text-foreground"
-              }`}
-          >
-            <BookOpen size={16} />
-            Blog
-            {isBlogStreaming && (
-              <span className="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
-            )}
-            {!isBlogStreaming && displayBlogText && (
-              <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${activeTab === "blog"
-                ? "bg-primary/15 text-primary"
-                : "bg-muted text-muted-foreground"
-                }`}>
-                ✓
-              </span>
-            )}
-          </button>
+        {/* ── Tab Switcher + Regenerate ─────────────────────────────────── */}
+        <div className="flex items-center justify-between gap-4 mb-8 animate-in fade-in slide-in-from-bottom duration-500 delay-100">
+          <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-xl border border-border w-fit">
+            <button
+              onClick={() => setActiveTab("notes")}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "notes"
+                ? "bg-card text-foreground shadow-sm border border-border"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              <FileText size={16} />
+              Notes
+              {totalDisplayPoints > 0 && (
+                <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${activeTab === "notes"
+                  ? "bg-primary/15 text-primary"
+                  : "bg-muted text-muted-foreground"
+                  }`}>
+                  {totalDisplayPoints}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("blog")}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "blog"
+                ? "bg-card text-foreground shadow-sm border border-border"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              <BookOpen size={16} />
+              Blog
+              {isBlogStreaming && (
+                <span className="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+              )}
+              {!isBlogStreaming && displayBlogText && (
+                <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${activeTab === "blog"
+                  ? "bg-primary/15 text-primary"
+                  : "bg-muted text-muted-foreground"
+                  }`}>
+                  ✓
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Regenerate button — contextual, right next to tabs */}
+          {!isExtracting && points.length > 0 && (
+            <button
+              onClick={handleRegenerate}
+              disabled={isRegenerating || !userApiKey}
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-border rounded-xl text-muted-foreground hover:bg-primary/10 hover:border-primary/50 hover:text-primary transition-all disabled:opacity-50 disabled:pointer-events-none"
+              title="Regenerate notes & blog"
+            >
+              <RefreshCw size={15} className={isRegenerating ? "animate-spin" : ""} />
+              Regenerate
+            </button>
+          )}
         </div>
 
         {/* ── Notes Tab ──────────────────────────────────────────────────── */}

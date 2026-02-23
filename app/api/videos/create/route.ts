@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { videos } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
     extractVideoId,
@@ -48,6 +49,22 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 { error: "Only videos from Theo's channel (@t3dotgg) are supported" },
                 { status: 400 },
+            );
+        }
+
+        // Check if user already has this video
+        const [existingVideo] = await db
+            .select()
+            .from(videos)
+            .where(and(eq(videos.youtubeId, videoId), eq(videos.userId, session.user.id)));
+
+        if (existingVideo) {
+            return NextResponse.json(
+                {
+                    error: "You've already added this video!",
+                    existingVideoId: existingVideo.id,
+                },
+                { status: 409 },
             );
         }
 

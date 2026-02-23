@@ -165,6 +165,19 @@ export default function Dashboard() {
       const data = await res.json();
 
       if (!res.ok) {
+        // Handle duplicate video — offer to navigate to existing one
+        if (res.status === 409 && data.existingVideoId) {
+          toast.info("Video already exists", {
+            description: "You've already added this video. View your existing notes.",
+            action: {
+              label: "View Notes",
+              onClick: () => router.push(`/video/${data.existingVideoId}`),
+            },
+          });
+          setShowModal(false);
+          setSubmitting(false);
+          return;
+        }
         setError(data.error || "Failed to create video");
         setSubmitting(false);
         return;
