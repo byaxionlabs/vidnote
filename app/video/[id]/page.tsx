@@ -7,8 +7,8 @@ import { useSession } from "@/lib/auth-client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { experimental_useObject as useObject, useCompletion } from "@ai-sdk/react";
-import { actionablePointsSchema, type ActionablePoint } from "@/lib/schemas";
+import { useCompletion } from "@ai-sdk/react";
+import { type ActionablePoint } from "@/lib/schemas";
 import { loadApiKey } from "@/lib/api-key";
 import { toast } from "sonner";
 import {
@@ -357,28 +357,87 @@ function VideoContent({ id }: { id: string }) {
     [userApiKey],
   );
 
-  // ── useObject for streaming AI extraction ──────────────────────────────
-  // The AI SDK's useObject hook handles incremental JSON parsing, partial
-  // object streaming, type safety, and render optimisation automatically.
+  // ── Parse streamed text into ActionablePoint[] ─────────────────────────
+  // Each line from the AI is formatted as: [category|timestamp] content
+  // We parse complete lines incrementally as they arrive.
 
-  const { object, submit, stop } = useObject({
-    api: "/api/stream",
-    schema: actionablePointsSchema,
-    headers: apiKeyHeaders,
-    onFinish: async ({ object: finalObject, error: finishError }) => {
-      if (finishError) {
-        setError(finishError.message || "Failed to extract insights");
-        setExtractionPhase("error");
-        return;
+  const parseStreamedPoints = useCallback((text: string): ActionablePoint[] => {
+    // Strip markdown code fences if the model wraps output in them
+    const cleaned = text.replace(/^```[\w]*\n?/gm, "").replace(/^```$/gm, "").trim();
+
+    const parsed: ActionablePoint[] = [];
+    const lines = cleaned.split("\n");
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // Try strict format: [category|timestamp] content
+      const strictMatch = trimmed.match(/^\[(action|remember|insight)\|(\d+)\]\s+(.+)$/);
+      if (strictMatch) {
+        parsed.push({
+          content: strictMatch[3].trim(),
+          category: strictMatch[1] as "action" | "remember" | "insight",
+          timestamp: parseInt(strictMatch[2], 10),
+        });
+        continue;
       }
 
-      const validPoints = (finalObject?.points ?? []).filter(
-        (p): p is ActionablePoint =>
-          !!p &&
-          typeof p.content === "string" &&
-          p.content.length > 0 &&
-          typeof p.category === "string",
-      );
+      // Try with optional numbering prefix: 1. [category|timestamp] content
+      const numberedMatch = trimmed.match(/^\d+\.\s*\[(action|remember|insight)\|(\d+)\]\s+(.+)$/);
+      if (numberedMatch) {
+        parsed.push({
+          content: numberedMatch[3].trim(),
+          category: numberedMatch[1] as "action" | "remember" | "insight",
+          timestamp: parseInt(numberedMatch[2], 10),
+        });
+        continue;
+      }
+
+      // Try with dash/bullet prefix: - [category|timestamp] content
+      const bulletMatch = trimmed.match(/^[-*•]\s*\[(action|remember|insight)\|(\d+)\]\s+(.+)$/);
+      if (bulletMatch) {
+        parsed.push({
+          content: bulletMatch[3].trim(),
+          category: bulletMatch[1] as "action" | "remember" | "insight",
+          timestamp: parseInt(bulletMatch[2], 10),
+        });
+        continue;
+      }
+
+      // Flexible fallback: any line containing category and timestamp in brackets
+      const flexMatch = trimmed.match(/\[\s*(action|remember|insight)\s*[|,]\s*(\d+)\s*\]\s*[:-]?\s*(.+)/);
+      if (flexMatch) {
+        parsed.push({
+          content: flexMatch[3].trim(),
+          category: flexMatch[1] as "action" | "remember" | "insight",
+          timestamp: parseInt(flexMatch[2], 10),
+        });
+        continue;
+      }
+    }
+
+    return parsed;
+  }, []);
+
+  // ── useCompletion for streaming AI extraction ─────────────────────────
+  // Plain text streaming gives true incremental delivery — each line
+  // (= one note) appears on the client as soon as the model generates it,
+  // unlike Output.object which buffers the entire JSON response.
+
+  const {
+    completion: notesStreamingText,
+    complete: notesComplete,
+    isLoading: isNotesLoading,
+  } = useCompletion({
+    id: "notes-stream",
+    streamProtocol: "text",
+    experimental_throttle: 50,
+    api: "/api/stream",
+    headers: apiKeyHeaders,
+    onFinish: async (_prompt, completion) => {
+      console.log("[Notes stream] Raw completion text:", completion);
+      const validPoints = parseStreamedPoints(completion);
 
       if (validPoints.length === 0) {
         setError("No insights were extracted from this video. Please try again.");
@@ -440,22 +499,12 @@ function VideoContent({ id }: { id: string }) {
     },
   });
 
-  // High watermark ref to prevent points from flashing away during stream finalization
-  const lastValidPointsRef = useRef<ActionablePoint[]>([]);
-
-  const streamingPoints = useMemo(() => {
-    const validPoints = (object?.points ?? []).filter(
-      (p): p is ActionablePoint =>
-        !!p &&
-        typeof p.content === "string" &&
-        p.content.length > 0 &&
-        typeof p.category === "string",
-    );
-    if (validPoints.length >= lastValidPointsRef.current.length) {
-      lastValidPointsRef.current = validPoints;
-    }
-    return lastValidPointsRef.current;
-  }, [object?.points]);
+  // Parse streaming text into points incrementally — each completed line
+  // is a new point that immediately appears in the UI.
+  const streamingPoints = useMemo(
+    () => parseStreamedPoints(notesStreamingText),
+    [notesStreamingText, parseStreamedPoints],
+  );
 
   // ── Blog streaming via useCompletion ──────────────────────────────────
   // The AI SDK’s useCompletion hook handles text streaming, loading state,
@@ -466,6 +515,9 @@ function VideoContent({ id }: { id: string }) {
     complete: blogComplete,
     isLoading: isBlogStreaming,
   } = useCompletion({
+    id: "blog-stream",
+    streamProtocol: "text",
+    experimental_throttle: 50,
     api: "/api/stream-blog",
     headers: apiKeyHeaders,
     onFinish: async (_prompt, completion) => {
@@ -517,6 +569,33 @@ function VideoContent({ id }: { id: string }) {
 
   // The blog text to display — streaming text while active, else saved content
   const displayBlogText = blogStreamingText || blogContent;
+
+  // Detect if AI is still processing video (loading but no data yet)
+  const isAiProcessing = isExtracting && isNotesLoading && streamingPoints.length === 0;
+  const hasBlogStartedStreaming = blogStreamingText.length > 0;
+
+  // Elapsed timer for processing feedback
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const extractionStartRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (isExtracting && !extractionStartRef.current) {
+      extractionStartRef.current = Date.now();
+    }
+    if (!isExtracting) {
+      extractionStartRef.current = null;
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      if (extractionStartRef.current) {
+        setElapsedSeconds(Math.floor((Date.now() - extractionStartRef.current) / 1000));
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isExtracting]);
 
   // ── Effects ────────────────────────────────────────────────────────────
 
@@ -582,16 +661,12 @@ function VideoContent({ id }: { id: string }) {
     setExtractionPhase("streaming");
 
     // Fire both streams in parallel
-    submit({ url: video.youtubeUrl });
+    notesComplete(video.youtubeUrl);
 
     if (!hasStartedBlogRef.current) {
       hasStartedBlogRef.current = true;
       blogComplete(video.youtubeUrl);
     }
-
-    return () => {
-      stop();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldExtract, video, loading, userApiKey]);
 
@@ -1125,16 +1200,59 @@ function VideoContent({ id }: { id: string }) {
             {/* Empty state while streaming with no points yet */}
             {totalDisplayPoints === 0 && showStreamingUI && (
               <div className="text-center py-16">
-                <Loader2
-                  size={48}
-                  className="animate-spin text-primary mx-auto mb-4"
-                />
-                <p className="text-muted-foreground text-lg">
-                  Watching the video and extracting insights...
-                </p>
-                <p className="text-muted-foreground text-sm mt-2">
-                  This may take a moment for longer videos
-                </p>
+                {/* Multi-stage processing indicator */}
+                <div className="max-w-sm mx-auto">
+                  <div className="relative w-20 h-20 mx-auto mb-6">
+                    <div className="absolute inset-0 rounded-full border-4 border-muted"></div>
+                    <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Brain size={28} className="text-primary" />
+                    </div>
+                  </div>
+
+                  {/* Stage indicators */}
+                  <div className="space-y-3 mb-6">
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${elapsedSeconds >= 0 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        }`}>
+                        {elapsedSeconds >= 5 ? <CheckCircle2 size={14} /> : <Loader2 size={14} className="animate-spin" />}
+                      </div>
+                      <span className={elapsedSeconds >= 0 ? "text-foreground font-medium" : "text-muted-foreground"}>
+                        Processing video content
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${elapsedSeconds >= 5 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        }`}>
+                        {elapsedSeconds >= 10 ? <CheckCircle2 size={14} /> : elapsedSeconds >= 5 ? <Loader2 size={14} className="animate-spin" /> : <span className="w-2 h-2 rounded-full bg-current"></span>}
+                      </div>
+                      <span className={elapsedSeconds >= 5 ? "text-foreground font-medium" : "text-muted-foreground"}>
+                        Analyzing key topics & timestamps
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${elapsedSeconds >= 10 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        }`}>
+                        {streamingPoints.length > 0 ? <CheckCircle2 size={14} /> : elapsedSeconds >= 10 ? <Loader2 size={14} className="animate-spin" /> : <span className="w-2 h-2 rounded-full bg-current"></span>}
+                      </div>
+                      <span className={elapsedSeconds >= 10 ? "text-foreground font-medium" : "text-muted-foreground"}>
+                        Extracting actionable insights
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-muted-foreground text-sm">
+                    {elapsedSeconds > 0 && (
+                      <span className="font-mono text-xs bg-muted px-2 py-1 rounded-md">
+                        {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, "0")}
+                      </span>
+                    )}
+                    {" "}
+                    {isAiProcessing
+                      ? "AI is watching and analyzing the video..."
+                      : "Notes will appear as they're extracted"}
+                  </p>
+                </div>
               </div>
             )}
 
@@ -1197,16 +1315,28 @@ function VideoContent({ id }: { id: string }) {
               <div className="text-center py-16 animate-in fade-in duration-500">
                 {isBlogStreaming ? (
                   <>
-                    <Loader2
-                      size={48}
-                      className="animate-spin text-primary mx-auto mb-4"
-                    />
+                    <div className="relative w-16 h-16 mx-auto mb-4">
+                      <div className="absolute inset-0 rounded-full border-4 border-muted"></div>
+                      <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <BookOpen size={22} className="text-primary" />
+                      </div>
+                    </div>
                     <p className="text-muted-foreground text-lg">
                       AI is writing an in-depth article...
                     </p>
                     <p className="text-muted-foreground text-sm mt-2">
-                      This may take a moment
+                      {hasBlogStartedStreaming
+                        ? "Content will appear momentarily"
+                        : "Processing video, text will stream once analysis begins"}
                     </p>
+                    {elapsedSeconds > 0 && (
+                      <p className="text-muted-foreground text-xs mt-3">
+                        <span className="font-mono bg-muted px-2 py-1 rounded-md">
+                          {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, "0")}
+                        </span>
+                      </p>
+                    )}
                   </>
                 ) : (
                   <>

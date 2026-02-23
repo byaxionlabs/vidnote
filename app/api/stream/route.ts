@@ -1,6 +1,5 @@
-import { streamText, Output } from "ai";
+import { streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { actionablePointsSchema } from "@/lib/schemas";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import {
@@ -9,8 +8,8 @@ import {
     isTheoChannel,
 } from "@/lib/youtube";
 
-// Allow streaming responses up to 60 seconds
-export const maxDuration = 60;
+// Allow streaming responses up to 120 seconds
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
     const session = await auth.api.getSession({
@@ -21,7 +20,9 @@ export async function POST(request: Request) {
         return new Response("Unauthorized", { status: 401 });
     }
 
-    const { url } = await request.json();
+    const body = await request.json();
+    // Support both { url } (legacy useObject) and { prompt } (useCompletion) formats
+    const url = body.url || body.prompt;
 
     if (!url) {
         return new Response(JSON.stringify({ error: "URL is required" }), {
@@ -70,22 +71,37 @@ export async function POST(request: Request) {
     // Normalize YouTube URL for AI
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-    const textPrompt = `You are an expert at extracting actionable insights from educational content. 
+    // Use plain text streaming format instead of Output.object to enable true
+    // incremental streaming. Output.object buffers all JSON before the SDK can
+    // start emitting partial objects, whereas plain text streams token-by-token.
+    // Each point is emitted on its own line, so the client can parse and render
+    // them one at a time as they arrive.
+    const textPrompt = `You are an expert at extracting actionable insights from educational content.
 
-Given the YouTube video titled "${metadata.title}", extract:
-1. **Action Items**: Specific things the viewer should DO after watching
-2. **Key Takeaways**: Important facts or concepts to REMEMBER
-3. **Insights**: Deeper understanding or "aha moments" from the content
+Given the YouTube video titled "${metadata.title}", extract actionable insights.
 
-IMPORTANT: For each point, also provide the timestamp (in seconds from the start of the video) where this point is discussed. This helps users verify the information.
+OUTPUT FORMAT — you MUST output EXACTLY one point per line using this format:
+[category|timestamp] content
+
+Where:
+- category is one of: action, remember, insight
+- timestamp is the number of seconds from the start of the video (integer)
+- content is the insight text (1-2 sentences max)
+
+Example output:
+[action|120] Set up TypeScript strict mode in your tsconfig.json for better type safety.
+[remember|245] Next.js App Router uses React Server Components by default.
+[insight|380] The trade-off between DX and performance often favors starting with simpler tools.
 
 Rules:
+- Output ONLY the formatted lines, nothing else — no preamble, no headers, no numbering
 - Be specific and concise (max 1-2 sentences per point)
 - Focus on practical, implementable advice
 - Skip filler content, intros, outros, sponsor segments
 - Each point should be self-contained and understandable without context
 - Aim for 5-15 total points depending on content length
-- Timestamps should be ACCURATE to where the point is actually discussed in the video`;
+- Timestamps should be ACCURATE to where the point is actually discussed in the video
+- category meanings: action = things to DO, remember = key facts to REMEMBER, insight = deeper "aha moments"`;
 
 
     console.log(`[API/stream] Gemini request for video: ${videoId} at ${new Date().toISOString()}`);
@@ -106,9 +122,7 @@ Rules:
         // gemini-2.0-flash has much higher free tier limits than gemini-2.5-pro
         // Free tier: ~1500 req/day, 15 req/min vs ~25 req/day for 2.5-pro
         model: googleProvider("gemini-3-flash-preview"),
-        // Output.object constrains the model to produce valid JSON matching the schema
-        // and enables useObject on the frontend to parse partial objects automatically
-        output: Output.object({ schema: actionablePointsSchema }),
+        // No Output.object — plain text streaming for true incremental delivery
         messages: [
             {
                 role: "user",
@@ -127,6 +141,9 @@ Rules:
         ],
         // Disable auto-retries: on 429 (rate limit), retrying just burns more quota
         maxRetries: 0,
+        onFinish: ({ text }) => {
+            console.log(`[API/stream] Full streamed text for video ${videoId}:\n${text}`);
+        },
     });
 
     return result.toTextStreamResponse();

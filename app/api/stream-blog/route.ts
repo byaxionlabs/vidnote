@@ -116,5 +116,5 @@ Use > blockquotes for notable quotes or hot takes from the video.`;
         maxRetries: 0,
     });
 
-    return result.toUIMessageStreamResponse();
+    return result.toTextStreamResponse();
 }
