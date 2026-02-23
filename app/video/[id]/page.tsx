@@ -329,7 +329,10 @@ function VideoContent({ id }: { id: string }) {
   const hasStartedBlogRef = useRef(false);
 
   // ── BYOK: load user's API key ─────────────────────────────────────────
+  // Use state (not just a ref) so that useObject/useCompletion hooks
+  // re-initialise with the correct headers once the key is decrypted.
 
+  const [userApiKey, setUserApiKey] = useState<string | null>(null);
   const userApiKeyRef = useRef<string | null>(null);
 
   const loadUserApiKey = useCallback(async () => {
@@ -337,14 +340,22 @@ function VideoContent({ id }: { id: string }) {
     try {
       const key = await loadApiKey(session.user.id);
       userApiKeyRef.current = key;
+      setUserApiKey(key);
     } catch {
       userApiKeyRef.current = null;
+      setUserApiKey(null);
     }
   }, [session?.user?.id]);
 
   useEffect(() => {
     loadUserApiKey();
   }, [loadUserApiKey]);
+
+  // Compute headers reactively so hooks always get the latest key
+  const apiKeyHeaders = useMemo(
+    () => (userApiKey ? { "x-gemini-api-key": userApiKey } : undefined),
+    [userApiKey],
+  );
 
   // ── useObject for streaming AI extraction ──────────────────────────────
   // The AI SDK's useObject hook handles incremental JSON parsing, partial
@@ -353,9 +364,7 @@ function VideoContent({ id }: { id: string }) {
   const { object, submit, stop } = useObject({
     api: "/api/stream",
     schema: actionablePointsSchema,
-    headers: userApiKeyRef.current
-      ? { "x-gemini-api-key": userApiKeyRef.current }
-      : undefined,
+    headers: apiKeyHeaders,
     onFinish: async ({ object: finalObject, error: finishError }) => {
       if (finishError) {
         setError(finishError.message || "Failed to extract insights");
@@ -458,9 +467,7 @@ function VideoContent({ id }: { id: string }) {
     isLoading: isBlogStreaming,
   } = useCompletion({
     api: "/api/stream-blog",
-    headers: userApiKeyRef.current
-      ? { "x-gemini-api-key": userApiKeyRef.current }
-      : undefined,
+    headers: apiKeyHeaders,
     onFinish: async (_prompt, completion) => {
       setBlogContent(completion);
 
@@ -555,12 +562,15 @@ function VideoContent({ id }: { id: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, id]);
 
-  // Start extraction when extract=true and video data is loaded
+  // Start extraction when extract=true, video data is loaded, AND the API key
+  // has been decrypted and is available. Without the `userApiKey` guard the
+  // useObject / useCompletion hooks would fire before the headers contain the key.
   useEffect(() => {
     if (
       !shouldExtract ||
       !video ||
       loading ||
+      !userApiKey || // Wait for the API key to be loaded & decrypted
       hasStartedExtractionRef.current ||
       points.length > 0 // Already has points — don't re-extract
     ) {
@@ -583,7 +593,7 @@ function VideoContent({ id }: { id: string }) {
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shouldExtract, video, loading]);
+  }, [shouldExtract, video, loading, userApiKey]);
 
   // ── Handlers ───────────────────────────────────────────────────────────
 

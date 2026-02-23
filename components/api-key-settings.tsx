@@ -65,10 +65,40 @@ export function ApiKeySettings({ userId, isOpen, onClose }: ApiKeySettingsProps)
                 return;
             }
 
+            // If removing the key (empty), skip validation
+            if (!trimmedKey) {
+                await saveApiKey(trimmedKey, userId);
+                setSavedKey(null);
+                setStatus("success");
+                setStatusMessage("API key removed.");
+                setTimeout(() => { setStatus("idle"); setStatusMessage(""); }, 3000);
+                setSaving(false);
+                return;
+            }
+
+            // Validate the key with Google's API before saving
+            const validateRes = await fetch("/api/validate-key", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-gemini-api-key": trimmedKey,
+                },
+            });
+
+            const validateData = await validateRes.json();
+
+            if (!validateData.valid) {
+                setStatus("error");
+                setStatusMessage(validateData.error || "Invalid API key. Please check your key and try again.");
+                setSaving(false);
+                return;
+            }
+
+            // Key is valid — encrypt and save locally
             await saveApiKey(trimmedKey, userId);
-            setSavedKey(trimmedKey || null);
+            setSavedKey(trimmedKey);
             setStatus("success");
-            setStatusMessage(trimmedKey ? "API key saved securely!" : "API key removed.");
+            setStatusMessage("API key verified and saved securely!");
 
             setTimeout(() => {
                 setStatus("idle");
@@ -76,7 +106,7 @@ export function ApiKeySettings({ userId, isOpen, onClose }: ApiKeySettingsProps)
             }, 3000);
         } catch {
             setStatus("error");
-            setStatusMessage("Failed to save API key. Please try again.");
+            setStatusMessage("Failed to validate API key. Please check your connection and try again.");
         } finally {
             setSaving(false);
         }
@@ -220,7 +250,7 @@ export function ApiKeySettings({ userId, isOpen, onClose }: ApiKeySettingsProps)
                     {saving ? (
                         <>
                             <Loader2 size={18} className="animate-spin" />
-                            Saving...
+                            Validating...
                         </>
                     ) : (
                         <>
