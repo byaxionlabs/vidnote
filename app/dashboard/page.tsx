@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession, signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -25,6 +26,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ApiKeySettings } from "@/components/api-key-settings";
 import { hasStoredApiKey, loadApiKey, isValidApiKeyFormat } from "@/lib/api-key";
+import { dashboardQueryKey, fetchDashboard } from "@/lib/queries";
 import { toast } from "sonner";
 
 interface VideoItem {
@@ -39,8 +41,9 @@ interface VideoItem {
 export default function Dashboard() {
   const { data: session, isPending } = useSession();
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const userId = session?.user.id;
   const [videos, setVideos] = useState<VideoItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
@@ -56,26 +59,21 @@ export default function Dashboard() {
     }
   }, [session, isPending, router]);
 
-  useEffect(() => {
-    if (session) {
-      fetchVideos();
-      setHasApiKey(hasStoredApiKey());
-    }
-  }, [session]);
+  const { data: dashboardData, isLoading } = useQuery({
+    queryKey: dashboardQueryKey(userId ?? ""),
+    queryFn: fetchDashboard,
+    enabled: Boolean(userId),
+  });
 
-  const fetchVideos = async () => {
-    try {
-      const res = await fetch("/api/videos");
-      const data = await res.json();
-      if (data.videos) {
-        setVideos(data.videos);
-      }
-    } catch (err) {
-      console.error("Error fetching videos:", err);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (dashboardData?.videos) {
+      setVideos(dashboardData.videos);
     }
-  };
+  }, [dashboardData]);
+
+  useEffect(() => {
+    if (session) setHasApiKey(hasStoredApiKey());
+  }, [session]);
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -187,6 +185,9 @@ export default function Dashboard() {
       toast.success("Video added!", {
         description: "Extracting notes now...",
       });
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: dashboardQueryKey(userId) });
+      }
       setShowModal(false);
       router.push(`/video/${data.video.id}?extract=true`);
       setUrl("");
@@ -210,7 +211,15 @@ export default function Dashboard() {
         throw new Error(data.error || "Failed to delete video");
       }
 
-      setVideos(videos.filter((v) => v.id !== id));
+      setVideos((prevVideos) => {
+        const nextVideos = prevVideos.filter((v) => v.id !== id);
+        if (userId) {
+          queryClient.setQueryData(dashboardQueryKey(userId), {
+            videos: nextVideos,
+          });
+        }
+        return nextVideos;
+      });
       setDeleteConfirmId(null);
       toast.success("Video deleted", {
         description: "The video and all its notes have been removed.",
@@ -353,7 +362,7 @@ export default function Dashboard() {
             </div>
             <button
               onClick={handleAddVideoClick}
-              className="inline-flex items-center gap-2 px-6 py-3.5 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-105 transition-all animate-in fade-in slide-in-from-right duration-500"
+              className="inline-flex items-center gap-2 px-6 py-3.5 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.01] transition-all animate-in fade-in duration-300"
             >
               <Plus size={20} />
               Add Video
@@ -361,7 +370,7 @@ export default function Dashboard() {
           </div>
 
           {/* Videos Grid */}
-          {loading ? (
+          {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -520,7 +529,7 @@ export default function Dashboard() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-60 disabled:pointer-events-none"
+                className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.01] transition-all disabled:opacity-60 disabled:pointer-events-none"
               >
                 {submitting ? (
                   <>
@@ -580,7 +589,7 @@ export default function Dashboard() {
               <button
                 onClick={() => handleDelete(deleteConfirmId)}
                 disabled={deletingId === deleteConfirmId}
-                className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 bg-destructive text-destructive-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-60 disabled:pointer-events-none"
+                className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 bg-destructive text-destructive-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.01] transition-all disabled:opacity-60 disabled:pointer-events-none"
               >
                 {deletingId === deleteConfirmId ? (
                   <>

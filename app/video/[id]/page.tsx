@@ -5,11 +5,13 @@ import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.min.css";
 import { useSession } from "@/lib/auth-client";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import Image from "next/image";
 import { useCompletion } from "@ai-sdk/react";
 import { type ActionablePoint } from "@/lib/schemas";
 import { loadApiKey } from "@/lib/api-key";
+import { fetchVideoById, videoQueryKey, type VideoResponse } from "@/lib/queries";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -292,6 +294,7 @@ function VideoContent({ id }: { id: string }) {
   const searchParams = useSearchParams();
   const { data: session, isPending } = useSession();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const shouldExtract = searchParams.get("extract") === "true";
 
@@ -299,7 +302,6 @@ function VideoContent({ id }: { id: string }) {
 
   const [video, setVideo] = useState<VideoData | null>(null);
   const [points, setPoints] = useState<VideoPoint[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   // Streaming state
@@ -465,6 +467,14 @@ function VideoContent({ id }: { id: string }) {
         const saveData = await saveRes.json();
 
         setPoints(saveData.points);
+        if (video) {
+          queryClient.setQueryData<VideoResponse>(videoQueryKey(id), (current) => ({
+            ...current,
+            video,
+            points: saveData.points,
+            blogContent,
+          }));
+        }
         setExtractionPhase("done");
         setIsExtracting(false);
 
@@ -523,6 +533,10 @@ function VideoContent({ id }: { id: string }) {
     headers: apiKeyHeaders,
     onFinish: async (_prompt, completion) => {
       setBlogContent(completion);
+      queryClient.setQueryData<VideoResponse>(videoQueryKey(id), (current) => {
+        if (!current) return current;
+        return { ...current, blogContent: completion };
+      });
 
       // Save the blog to the database
       try {
@@ -609,38 +623,31 @@ function VideoContent({ id }: { id: string }) {
 
   // Fetch video data
   const isAuthenticated = !!session;
+  const { data: videoData, isLoading: loading, error: videoLoadError } = useQuery({
+    queryKey: videoQueryKey(id),
+    queryFn: () => fetchVideoById(id),
+    enabled: isAuthenticated && Boolean(id),
+  });
 
   useEffect(() => {
-    if (!isAuthenticated || !id) return;
+    if (videoLoadError) {
+      setError(videoLoadError instanceof Error ? videoLoadError.message : "Failed to load video");
+    }
+  }, [videoLoadError]);
 
-    const fetchVideo = async () => {
-      try {
-        const res = await fetch(`/api/videos/${id}`);
-        if (!res.ok) throw new Error("Video not found");
+  useEffect(() => {
+    if (!videoData) return;
+    setVideo(videoData.video);
 
-        const data = await res.json();
-        setVideo(data.video);
+    if (videoData.blogContent) {
+      setBlogContent(videoData.blogContent);
+      setBlogSaved(true);
+    }
 
-        // Load saved blog content if available
-        if (data.blogContent) {
-          setBlogContent(data.blogContent);
-          setBlogSaved(true);
-        }
-
-        // Only set points from DB if we're not about to extract
-        if (!shouldExtract || data.points.length > 0) {
-          setPoints(data.points);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load video");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchVideo();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, id]);
+    if (!shouldExtract || videoData.points.length > 0) {
+      setPoints(videoData.points);
+    }
+  }, [shouldExtract, videoData]);
 
   // Start extraction when extract=true, video data is loaded, AND the API key
   // has been decrypted and is available. Without the `userApiKey` guard the
@@ -681,11 +688,18 @@ function VideoContent({ id }: { id: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isCompleted: !isCompleted }),
       });
-      setPoints(
-        points.map((p) =>
-          p.id === pointId ? { ...p, isCompleted: !isCompleted } : p,
-        ),
+      const updatedPoints = points.map((p) =>
+        p.id === pointId ? { ...p, isCompleted: !isCompleted } : p,
       );
+      setPoints(updatedPoints);
+      if (video) {
+        queryClient.setQueryData<VideoResponse>(videoQueryKey(id), (current) => ({
+          ...current,
+          video,
+          points: updatedPoints,
+          blogContent,
+        }));
+      }
     } catch (err) {
       console.error("Error updating point:", err);
     } finally {
@@ -705,6 +719,7 @@ function VideoContent({ id }: { id: string }) {
       toast.success("Video deleted", {
         description: "The video and all its notes have been removed.",
       });
+      queryClient.removeQueries({ queryKey: videoQueryKey(id) });
       router.push("/dashboard");
     } catch (err) {
       console.error("Error deleting video:", err);
@@ -744,6 +759,10 @@ function VideoContent({ id }: { id: string }) {
     setPoints([]);
     setBlogContent(null);
     setBlogSaved(false);
+    queryClient.setQueryData<VideoResponse>(videoQueryKey(id), (current) => {
+      if (!current) return current;
+      return { ...current, points: [], blogContent: null };
+    });
 
     // Reset refs so streams can fire again
     hasStartedExtractionRef.current = false;

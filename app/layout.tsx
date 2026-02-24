@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { QueryProvider } from "@/components/query-provider";
 import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
-  title: "Theo-Notes - Actionable Insights from Theo's Videos",
+  title: "Theo Notes - Actionable Insights from Theo's Videos",
   description: "Extract key takeaways, action items, and insights from Theo's YouTube videos (@t3dotgg). Never miss an important point again.",
   keywords: ["Theo", "t3dotgg", "video notes", "actionable insights", "AI", "productivity", "learning", "Gemini AI", "YouTube"],
   authors: [{ name: "Theo-Notes" }],
@@ -38,16 +39,18 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <ThemeProvider>
-          {children}
-          <Toaster
-            position="top-right"
-            richColors
-            toastOptions={{
-              style: {
-                fontFamily: "var(--font-sans)",
-              },
-            }}
-          />
+          <QueryProvider>
+            {children}
+            <Toaster
+              position="top-right"
+              richColors
+              toastOptions={{
+                style: {
+                  fontFamily: "var(--font-sans)",
+                },
+              }}
+            />
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>
