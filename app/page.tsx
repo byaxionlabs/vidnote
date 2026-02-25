@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { signUp, signIn, useSession, signOut } from "@/lib/auth-client";
-import { 
-  Sparkles, 
-  CheckCircle2, 
-  Lightbulb, 
+import {
+  Sparkles,
+  CheckCircle2,
+  Lightbulb,
   Target,
   ArrowRight,
   Loader2,
@@ -57,13 +57,13 @@ export default function Home() {
     }
   };
 
-  if (isPending) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="loader"></div>
-      </div>
-    );
-  }
+  // if (isPending) {
+  //   return (
+  //     <div className="min-h-screen flex items-center justify-center bg-background">
+  //       <div className="loader"></div>
+  //     </div>
+  //   );
+  // }
 
   if (session) {
     return (
@@ -84,16 +84,16 @@ export default function Home() {
             Ready to extract insights from Theo&apos;s latest video?
           </p>
         </div>
-        
+
         <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
-          <Link 
-            href="/dashboard" 
+          <Link
+            href="/dashboard"
             className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all"
           >
             Go to Dashboard
             <ArrowRight size={18} />
           </Link>
-          <button 
+          <button
             onClick={() => signOut()}
             className="px-8 py-4 border-2 border-border text-foreground font-medium rounded-xl hover:bg-accent hover:border-primary transition-all"
           >
@@ -131,7 +131,7 @@ export default function Home() {
 
             {/* Logo & Title */}
             <div className="flex items-center gap-4 mb-6 animate-in fade-in slide-in-from-left duration-500 delay-50">
-             
+
               <h1 className="text-4xl  text-primary italic lg:text-5xl font-bold text-foreground font-serif">
                 Theo Notes
               </h1>
@@ -148,7 +148,7 @@ export default function Home() {
 
             {/* Subheadline */}
             <p className="text-lg text-muted-foreground mb-10 leading-relaxed animate-in fade-in slide-in-from-left duration-500 delay-200">
-              Paste any video from <span className="text-primary font-medium">@t3dotgg</span> and let AI extract 
+              Paste any video from <span className="text-primary font-medium">@t3dotgg</span> and let AI extract
               the key takeaways, action items, and insights you need to level up.
             </p>
 
@@ -169,7 +169,7 @@ export default function Home() {
             </div>
 
             {/* Stats */}
-           
+
           </div>
         </div>
 
@@ -194,21 +194,19 @@ export default function Home() {
             <div className="flex mb-6 p-1 bg-muted rounded-xl">
               <button
                 onClick={() => { setIsLogin(true); setError(""); }}
-                className={`flex-1 py-3 rounded-lg font-semibold text-sm transition-all duration-300 ${
-                  isLogin 
-                    ? "bg-primary text-primary-foreground shadow-md" 
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={`flex-1 py-3 rounded-lg font-semibold text-sm transition-all duration-300 ${isLogin
+                  ? "bg-primary text-primary-foreground shadow-md"
+                  : "text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 Sign In
               </button>
               <button
                 onClick={() => { setIsLogin(false); setError(""); }}
-                className={`flex-1 py-3 rounded-lg font-semibold text-sm transition-all duration-300 ${
-                  !isLogin 
-                    ? "bg-primary text-primary-foreground shadow-md" 
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={`flex-1 py-3 rounded-lg font-semibold text-sm transition-all duration-300 ${!isLogin
+                  ? "bg-primary text-primary-foreground shadow-md"
+                  : "text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 Sign Up
               </button>
@@ -295,7 +293,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      
+
     </div>
   );
 }
