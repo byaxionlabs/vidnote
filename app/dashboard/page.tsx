@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession, signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,6 +27,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { ApiKeySettings } from "@/components/api-key-settings";
 import { hasStoredApiKey, loadApiKey, isValidApiKeyFormat } from "@/lib/api-key";
 import { dashboardQueryKey, fetchDashboard } from "@/lib/queries";
+import { prefetchVideo } from "@/lib/prefetch";
 import { toast } from "sonner";
 
 interface VideoItem {
@@ -74,6 +75,12 @@ export default function Dashboard() {
   useEffect(() => {
     if (session) setHasApiKey(hasStoredApiKey());
   }, [session]);
+
+  // Prefetch video data on hover so navigation feels instant
+  const handlePrefetchVideo = useCallback(
+    (videoId: string) => prefetchVideo(queryClient, videoId),
+    [queryClient],
+  );
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -352,7 +359,7 @@ export default function Dashboard() {
         <div className="max-w-6xl mx-auto px-6 py-10">
           {/* Page Header */}
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10">
-            <div className="animate-in fade-in slide-in-from-left duration-500">
+            <div>
               <h1 className="text-4xl lg:text-5xl mb-3 text-foreground">
                 Your <span className="text-primary italic">Theo Notes</span>
               </h1>
@@ -362,7 +369,7 @@ export default function Dashboard() {
             </div>
             <button
               onClick={handleAddVideoClick}
-              className="inline-flex items-center gap-2 px-6 py-3.5 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.01] transition-all animate-in fade-in duration-300"
+              className="inline-flex items-center gap-2 px-6 py-3.5 bg-primary text-primary-foreground font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.01] transition-all"
             >
               <Plus size={20} />
               Add Video
@@ -374,16 +381,16 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden">
-                  <div className="aspect-video bg-muted animate-pulse"></div>
+                  <div className="aspect-video bg-muted"></div>
                   <div className="p-5 space-y-3">
-                    <div className="h-5 w-3/4 bg-muted animate-pulse rounded"></div>
-                    <div className="h-4 w-1/2 bg-muted animate-pulse rounded"></div>
+                    <div className="h-5 w-3/4 bg-muted rounded"></div>
+                    <div className="h-4 w-1/2 bg-muted rounded"></div>
                   </div>
                 </div>
               ))}
             </div>
           ) : videos.length === 0 ? (
-            <div className="text-center py-24 animate-in fade-in zoom-in-95 duration-500">
+            <div className="text-center py-24">
               <div className="relative inline-block mb-8">
                 <div className="w-32 h-32 rounded-3xl bg-card border-2 border-dashed border-border flex items-center justify-center">
                   <PlayCircle size={48} className="text-muted-foreground" />
@@ -409,8 +416,9 @@ export default function Dashboard() {
               {videos.map((video, index) => (
                 <div
                   key={video.id}
-                  className="bg-card border border-border rounded-2xl overflow-hidden group hover:shadow-xl hover:border-primary/50 transition-all duration-300 animate-in fade-in slide-in-from-bottom duration-500 flex flex-col"
-                  style={{ animationDelay: `${index * 50}ms` }}
+                  className="bg-card border border-border rounded-2xl overflow-hidden group hover:shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col"
+                  onMouseEnter={() => handlePrefetchVideo(video.id)}
+                  onFocus={() => handlePrefetchVideo(video.id)}
                 >
                   <Link href={`/video/${video.id}`} className="flex-1 flex flex-col">
                     <div className="relative overflow-hidden">
@@ -483,7 +491,7 @@ export default function Dashboard() {
             className="absolute inset-0 bg-background/80 backdrop-blur-md"
             onClick={() => setShowModal(false)}
           ></div>
-          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-lg shadow-2xl">
             <button
               onClick={() => setShowModal(false)}
               className="absolute top-5 right-5 w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
@@ -521,7 +529,7 @@ export default function Dashboard() {
               </div>
 
               {error && (
-                <div className="mb-5 p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm animate-in fade-in duration-200">
+                <div className="mb-5 p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm">
                   {error}
                 </div>
               )}
@@ -554,7 +562,7 @@ export default function Dashboard() {
             className="absolute inset-0 bg-background/80 backdrop-blur-md"
             onClick={() => { setDeleteConfirmId(null); setDeleteError(""); }}
           ></div>
-          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-md shadow-2xl">
             <button
               onClick={() => { setDeleteConfirmId(null); setDeleteError(""); }}
               className="absolute top-5 right-5 w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
@@ -573,7 +581,7 @@ export default function Dashboard() {
             </div>
 
             {deleteError && (
-              <div className="mb-5 p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm animate-in fade-in duration-200 flex items-center gap-2">
+              <div className="mb-5 p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm flex items-center gap-2">
                 <AlertTriangle size={16} className="shrink-0" />
                 {deleteError}
               </div>

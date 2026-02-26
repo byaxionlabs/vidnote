@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { videos, actionablePoints } from "@/lib/db/schema";
+import { videos } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 
+// GET /api/videos/[id]/notes — fetch user notes
 export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -21,7 +22,7 @@ export async function GET(
         const { id } = await params;
 
         const [video] = await db
-            .select()
+            .select({ userNotes: videos.userNotes })
             .from(videos)
             .where(and(eq(videos.id, id), eq(videos.userId, session.user.id)));
 
@@ -29,23 +30,18 @@ export async function GET(
             return NextResponse.json({ error: "Video not found" }, { status: 404 });
         }
 
-        const points = await db
-            .select()
-            .from(actionablePoints)
-            .where(eq(actionablePoints.videoId, id))
-            .orderBy(actionablePoints.order);
-
-        return NextResponse.json({ video, points, blogContent: video.blogContent || null, userNotes: video.userNotes || null });
+        return NextResponse.json({ userNotes: video.userNotes || null });
     } catch (error) {
-        console.error("Error fetching video:", error);
+        console.error("Error fetching user notes:", error);
         return NextResponse.json(
-            { error: "Failed to fetch video" },
+            { error: "Failed to fetch notes" },
             { status: 500 }
         );
     }
 }
 
-export async function DELETE(
+// PUT /api/videos/[id]/notes — save user notes
+export async function PUT(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
@@ -59,10 +55,12 @@ export async function DELETE(
         }
 
         const { id } = await params;
+        const body = await request.json();
+        const { userNotes } = body;
 
         // Verify the video belongs to the user
         const [video] = await db
-            .select()
+            .select({ id: videos.id })
             .from(videos)
             .where(and(eq(videos.id, id), eq(videos.userId, session.user.id)));
 
@@ -70,17 +68,16 @@ export async function DELETE(
             return NextResponse.json({ error: "Video not found" }, { status: 404 });
         }
 
-        // Delete actionable points first (foreign key constraint)
-        await db.delete(actionablePoints).where(eq(actionablePoints.videoId, id));
-
-        // Delete the video
-        await db.delete(videos).where(eq(videos.id, id));
+        await db
+            .update(videos)
+            .set({ userNotes, updatedAt: new Date() })
+            .where(eq(videos.id, id));
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Error deleting video:", error);
+        console.error("Error saving user notes:", error);
         return NextResponse.json(
-            { error: "Failed to delete video" },
+            { error: "Failed to save notes" },
             { status: 500 }
         );
     }

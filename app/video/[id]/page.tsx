@@ -11,7 +11,8 @@ import Image from "next/image";
 import { useCompletion } from "@ai-sdk/react";
 import { type ActionablePoint } from "@/lib/schemas";
 import { loadApiKey } from "@/lib/api-key";
-import { fetchVideoById, videoQueryKey, type VideoResponse } from "@/lib/queries";
+import { fetchVideoById, videoQueryKey, dashboardQueryKey, type VideoResponse } from "@/lib/queries";
+import { prefetchDashboard } from "@/lib/prefetch";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -33,8 +34,12 @@ import {
   BookOpen,
   AlertTriangle,
   RefreshCw,
+  PenLine,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import dynamic from "next/dynamic";
+
+const UserNotesEditor = dynamic(() => import("@/components/user-notes-editor"), { ssr: false });
 
 interface VideoPoint {
   id: string;
@@ -314,8 +319,11 @@ function VideoContent({ id }: { id: string }) {
   const [blogContent, setBlogContent] = useState<string | null>(null);
   const [blogSaved, setBlogSaved] = useState(false);
 
+  // User notes state
+  const [userNotes, setUserNotes] = useState<string | null>(null);
+
   // Tab state
-  const [activeTab, setActiveTab] = useState<"notes" | "blog">("notes");
+  const [activeTab, setActiveTab] = useState<"notes" | "blog" | "my-notes">("notes");
 
   // Interaction state
   const [updatingPoint, setUpdatingPoint] = useState<string | null>(null);
@@ -330,6 +338,14 @@ function VideoContent({ id }: { id: string }) {
 
   const hasStartedExtractionRef = useRef(false);
   const hasStartedBlogRef = useRef(false);
+
+  // ── Prewarm dashboard cache ────────────────────────────────────────────
+  // So navigating back to /dashboard is instant (no loading skeleton).
+  useEffect(() => {
+    if (session?.user?.id) {
+      prefetchDashboard(queryClient, session.user.id);
+    }
+  }, [session?.user?.id, queryClient]);
 
   // ── BYOK: load user's API key ─────────────────────────────────────────
   // Use state (not just a ref) so that useObject/useCompletion hooks
@@ -644,6 +660,10 @@ function VideoContent({ id }: { id: string }) {
       setBlogSaved(true);
     }
 
+    if (videoData.userNotes) {
+      setUserNotes(videoData.userNotes);
+    }
+
     if (!shouldExtract || videoData.points.length > 0) {
       setPoints(videoData.points);
     }
@@ -720,6 +740,12 @@ function VideoContent({ id }: { id: string }) {
         description: "The video and all its notes have been removed.",
       });
       queryClient.removeQueries({ queryKey: videoQueryKey(id) });
+      if (session?.user?.id) {
+        queryClient.setQueryData(dashboardQueryKey(session.user.id), (old: { videos: { id: string }[] } | undefined) => {
+          if (!old) return old;
+          return { ...old, videos: old.videos.filter((v) => v.id !== id) };
+        });
+      }
       router.push("/dashboard");
     } catch (err) {
       console.error("Error deleting video:", err);
@@ -801,13 +827,13 @@ function VideoContent({ id }: { id: string }) {
           </div>
         </header>
         <div className="max-w-5xl mx-auto px-6 py-10">
-          <div className="h-8 w-48 bg-muted animate-pulse rounded mb-8"></div>
-          <div className="aspect-video bg-muted animate-pulse rounded-2xl mb-10"></div>
+          <div className="h-8 w-48 bg-muted rounded mb-8"></div>
+          <div className="aspect-video bg-muted rounded-2xl mb-10"></div>
           <div className="space-y-4">
             {[...Array(5)].map((_, i) => (
               <div
                 key={i}
-                className="h-20 bg-muted animate-pulse rounded-xl"
+                className="h-20 bg-muted rounded-xl"
               ></div>
             ))}
           </div>
@@ -819,7 +845,7 @@ function VideoContent({ id }: { id: string }) {
   if ((error && !isExtracting) || !video) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
-        <div className="text-center animate-in fade-in duration-500">
+        <div className="text-center">
           <div className="w-24 h-24 rounded-2xl bg-card border-2 border-dashed border-border flex items-center justify-center mx-auto mb-6">
             <Zap size={32} className="text-muted-foreground" />
           </div>
@@ -897,7 +923,7 @@ function VideoContent({ id }: { id: string }) {
         {/* Back Button */}
         <Link
           href="/dashboard"
-          className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors mb-8 group animate-in fade-in duration-300"
+          className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors mb-8 group"
         >
           <ArrowLeft
             size={18}
@@ -907,7 +933,7 @@ function VideoContent({ id }: { id: string }) {
         </Link>
 
         {/* Video Hero Section */}
-        <div className="bg-card border border-border rounded-3xl overflow-hidden mb-10 shadow-lg animate-in fade-in slide-in-from-bottom duration-500">
+        <div className="bg-card border border-border rounded-3xl overflow-hidden mb-10 shadow-lg">
           <div className="flex flex-col lg:flex-row">
             {/* Thumbnail */}
             <div className="lg:w-2/5 relative overflow-hidden">
@@ -1048,7 +1074,7 @@ function VideoContent({ id }: { id: string }) {
         </div>
 
         {/* ── Tab Switcher + Regenerate ─────────────────────────────────── */}
-        <div className="flex items-center justify-between gap-4 mb-8 animate-in fade-in slide-in-from-bottom duration-500 delay-100">
+        <div className="flex items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-xl border border-border w-fit">
             <button
               onClick={() => setActiveTab("notes")}
@@ -1089,6 +1115,16 @@ function VideoContent({ id }: { id: string }) {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setActiveTab("my-notes")}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "my-notes"
+                ? "bg-card text-foreground shadow-sm border border-border"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              <PenLine size={16} />
+              My Notes
+            </button>
           </div>
 
           {/* Regenerate button — contextual, right next to tabs */}
@@ -1110,11 +1146,11 @@ function VideoContent({ id }: { id: string }) {
           <>
             {/* Insights Grid */}
             {totalDisplayPoints > 0 && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Left Column - Action Items + Insights */}
                 <div className="space-y-8">
                   {groupedPoints.action.length > 0 && (
-                    <section className="animate-in fade-in slide-in-from-left duration-500 delay-100">
+                    <section>
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center">
                           <Target size={24} className="text-primary" />
@@ -1165,7 +1201,7 @@ function VideoContent({ id }: { id: string }) {
                   )}
 
                   {groupedPoints.insight.length > 0 && (
-                    <section className="animate-in fade-in slide-in-from-left duration-500 delay-300">
+                    <section>
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-2xl bg-chart-3/10 border border-chart-3/30 flex items-center justify-center">
                           <Lightbulb size={24} className="text-chart-3" />
@@ -1219,7 +1255,7 @@ function VideoContent({ id }: { id: string }) {
                 {/* Right Column - Key Takeaways */}
                 <div className="space-y-8">
                   {groupedPoints.remember.length > 0 && (
-                    <section className="animate-in fade-in slide-in-from-right duration-500 delay-200">
+                    <section>
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-2xl bg-chart-2/10 border border-chart-2/30 flex items-center justify-center">
                           <Brain size={24} className="text-chart-2" />
@@ -1333,7 +1369,7 @@ function VideoContent({ id }: { id: string }) {
 
             {/* Empty state for saved video with no points */}
             {totalDisplayPoints === 0 && !isExtracting && !loading && (
-              <div className="text-center py-16 animate-in fade-in duration-500">
+              <div className="text-center py-16">
                 <div className="w-20 h-20 rounded-2xl bg-card border-2 border-dashed border-border flex items-center justify-center mx-auto mb-4">
                   <Zap size={32} className="text-muted-foreground" />
                 </div>
@@ -1347,7 +1383,7 @@ function VideoContent({ id }: { id: string }) {
 
         {/* ── Blog Tab ───────────────────────────────────────────────────── */}
         {activeTab === "blog" && (
-          <div className="animate-in fade-in duration-300">
+          <div>
             {/* Blog streaming / content */}
             {displayBlogText ? (
               <div className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
@@ -1387,7 +1423,7 @@ function VideoContent({ id }: { id: string }) {
               </div>
             ) : (
               /* Blog empty / loading state */
-              <div className="text-center py-16 animate-in fade-in duration-500">
+              <div className="text-center py-16">
                 {isBlogStreaming ? (
                   <>
                     <div className="relative w-16 h-16 mx-auto mb-4">
@@ -1430,6 +1466,31 @@ function VideoContent({ id }: { id: string }) {
             )}
           </div>
         )}
+
+        {/* ── My Notes Tab ──────────────────────────────────────────────── */}
+        {activeTab === "my-notes" && (
+          <div>
+            <div className="mb-6">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-xl bg-chart-3/10 border border-chart-3/30 flex items-center justify-center">
+                  <PenLine size={20} className="text-chart-3" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-foreground text-lg">
+                    My Notes
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Write your own personal notes • Auto-saves as you type • Ctrl+S to save instantly
+                  </p>
+                </div>
+              </div>
+            </div>
+            <UserNotesEditor
+              videoId={id}
+              initialContent={userNotes}
+            />
+          </div>
+        )}
       </main>
 
       {/* Video Preview Modal */}
@@ -1439,7 +1500,7 @@ function VideoContent({ id }: { id: string }) {
             className="absolute inset-0 bg-background/80 backdrop-blur-md"
             onClick={() => setPreviewPoint(null)}
           ></div>
-          <div className="relative bg-card border border-border rounded-3xl overflow-hidden w-full max-w-3xl shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+          <div className="relative bg-card border border-border rounded-3xl overflow-hidden w-full max-w-3xl shadow-2xl">
             {/* Modal Header */}
             <div className="p-4 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1500,7 +1561,7 @@ function VideoContent({ id }: { id: string }) {
             className="absolute inset-0 bg-background/80 backdrop-blur-md"
             onClick={() => { setShowDeleteModal(false); setDeleteError(""); }}
           ></div>
-          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-md shadow-2xl">
             <button
               onClick={() => { setShowDeleteModal(false); setDeleteError(""); }}
               className="absolute top-5 right-5 w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
@@ -1519,7 +1580,7 @@ function VideoContent({ id }: { id: string }) {
             </div>
 
             {deleteError && (
-              <div className="mb-5 p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm animate-in fade-in duration-200 flex items-center gap-2">
+              <div className="mb-5 p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm flex items-center gap-2">
                 <AlertTriangle size={16} className="shrink-0" />
                 {deleteError}
               </div>

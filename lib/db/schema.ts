@@ -63,6 +63,7 @@ export const videos = pgTable("videos", {
     thumbnailUrl: text("thumbnailUrl"),
     transcript: text("transcript"),
     blogContent: text("blogContent"),
+    userNotes: text("userNotes"),
     createdAt: timestamp("createdAt").notNull().defaultNow(),
     updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });

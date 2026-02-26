@@ -283,6 +283,7 @@ button, a, input, textarea, select, [role="button"] {
   transition-duration: 160ms;
 }
 
+
 /* ======================== */
 /* BLOG ARTICLE STYLES      */
 /* ======================== */
@@ -436,4 +437,401 @@ button, a, input, textarea, select, [role="button"] {
   background: var(--border);
   margin: 2rem 0;
   border-radius: 1px;
+}
+
+/* ======================== */
+/* TIPTAP USER NOTES EDITOR */
+/* ======================== */
+
+.user-notes-editor-wrapper {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s ease;
+}
+
+.user-notes-editor-wrapper:focus-within {
+  box-shadow: var(--shadow-md), 0 0 0 2px var(--primary) / 0.15;
+  border-color: var(--primary) / 0.4;
+}
+
+/* ── Toolbar ────────────────────────────────────── */
+
+.user-notes-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--muted) / 0.3;
+  flex-wrap: wrap;
+}
+
+.user-notes-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.user-notes-toolbar-divider {
+  width: 1px;
+  height: 1.5rem;
+  background: var(--border);
+  margin: 0 0.35rem;
+  flex-shrink: 0;
+}
+
+.user-notes-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.user-notes-toolbar-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.user-notes-toolbar-btn.active {
+  background: var(--primary) / 0.15;
+  color: var(--primary);
+}
+
+.user-notes-toolbar-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Save Status ────────────────────────────────── */
+
+.user-notes-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.user-notes-status.saving {
+  color: var(--muted-foreground);
+}
+
+.user-notes-status.saved {
+  color: var(--chart-2);
+}
+
+.user-notes-status.error {
+  color: var(--destructive);
+}
+
+/* ── Bubble Menu ────────────────────────────────── */
+
+.user-notes-bubble-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0.35rem 0.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ── Editor Content Area ────────────────────────── */
+
+.user-notes-editor-content {
+  padding: 1.25rem 1.5rem;
+  min-height: 320px;
+  outline: none;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  line-height: 1.75;
+  color: var(--foreground);
+}
+
+.user-notes-editor-content > * + * {
+  margin-top: 0.65em;
+}
+
+/* Headings */
+.user-notes-editor-content h1 {
+  font-family: var(--font-serif);
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--foreground);
+}
+
+.user-notes-editor-content h2 {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-top: 1.25rem;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 2px solid var(--border);
+  color: var(--foreground);
+}
+
+.user-notes-editor-content h3 {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.3rem;
+  color: var(--foreground);
+}
+
+/* Paragraphs */
+.user-notes-editor-content p {
+  margin-bottom: 0.1em;
+}
+
+/* Lists */
+.user-notes-editor-content ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+
+.user-notes-editor-content ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+
+.user-notes-editor-content li {
+  margin-bottom: 0.25rem;
+}
+
+.user-notes-editor-content li p {
+  margin: 0;
+}
+
+/* Task List */
+.user-notes-editor-content ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.user-notes-editor-content ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.user-notes-editor-content ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 0.25rem;
+}
+
+.user-notes-editor-content ul[data-type="taskList"] li > label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 2px solid var(--border);
+  border-radius: 0.35rem;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+  background: var(--background);
+}
+
+.user-notes-editor-content ul[data-type="taskList"] li > label input[type="checkbox"]:checked {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.user-notes-editor-content ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0.5px;
+  width: 6px;
+  height: 10px;
+  border: solid var(--primary-foreground);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.user-notes-editor-content ul[data-type="taskList"] li[data-checked="true"] > div > p {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+}
+
+/* Blockquote */
+.user-notes-editor-content blockquote {
+  border-left: 4px solid var(--primary);
+  background: var(--muted) / 0.5;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  border-radius: 0 0.75rem 0.75rem 0;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+
+.user-notes-editor-content blockquote p {
+  margin: 0;
+}
+
+/* Inline Code */
+.user-notes-editor-content code {
+  background: var(--muted);
+  color: var(--primary);
+  border: 1px solid var(--border);
+  padding: 0.15em 0.4em;
+  border-radius: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  font-weight: 500;
+}
+
+/* Code Block */
+.user-notes-editor-content pre {
+  background: oklch(0.20 0.02 280);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: oklch(0.90 0.01 280);
+}
+
+.user-notes-editor-content pre code {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  color: inherit;
+  font-size: inherit;
+}
+
+/* Horizontal Rule */
+.user-notes-editor-content hr {
+  border: none;
+  height: 2px;
+  background: var(--border);
+  margin: 1.5rem 0;
+  border-radius: 1px;
+}
+
+/* Strong / Bold */
+.user-notes-editor-content strong {
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+/* Emphasis */
+.user-notes-editor-content em {
+  font-style: italic;
+}
+
+/* Mark / Highlight */
+.user-notes-editor-content mark {
+  background: oklch(0.88 0.15 90);
+  color: oklch(0.30 0.05 70);
+  border-radius: 0.2em;
+  padding: 0.05em 0.2em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.dark .user-notes-editor-content mark {
+  background: oklch(0.45 0.12 90);
+  color: oklch(0.92 0.04 90);
+}
+
+/* Strikethrough */
+.user-notes-editor-content s {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+}
+
+/* Underline */
+.user-notes-editor-content u {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ── Placeholder ────────────────────────────────── */
+
+.user-notes-editor-content p.is-editor-empty:first-child::before {
+  color: var(--muted-foreground);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* ── lowlight / code block syntax highlighting ── */
+
+.user-notes-editor-content pre .hljs-comment,
+.user-notes-editor-content pre .hljs-quote {
+  color: oklch(0.55 0.01 280);
+}
+
+.user-notes-editor-content pre .hljs-variable,
+.user-notes-editor-content pre .hljs-template-variable,
+.user-notes-editor-content pre .hljs-attribute,
+.user-notes-editor-content pre .hljs-tag,
+.user-notes-editor-content pre .hljs-regexp,
+.user-notes-editor-content pre .hljs-link,
+.user-notes-editor-content pre .hljs-name,
+.user-notes-editor-content pre .hljs-selector-id,
+.user-notes-editor-content pre .hljs-selector-class {
+  color: oklch(0.75 0.18 20);
+}
+
+.user-notes-editor-content pre .hljs-number,
+.user-notes-editor-content pre .hljs-meta,
+.user-notes-editor-content pre .hljs-built_in,
+.user-notes-editor-content pre .hljs-builtin-name,
+.user-notes-editor-content pre .hljs-literal,
+.user-notes-editor-content pre .hljs-type,
+.user-notes-editor-content pre .hljs-params {
+  color: oklch(0.72 0.15 60);
+}
+
+.user-notes-editor-content pre .hljs-string,
+.user-notes-editor-content pre .hljs-symbol,
+.user-notes-editor-content pre .hljs-bullet {
+  color: oklch(0.72 0.17 150);
+}
+
+.user-notes-editor-content pre .hljs-title,
+.user-notes-editor-content pre .hljs-section {
+  color: oklch(0.78 0.15 70);
+}
+
+.user-notes-editor-content pre .hljs-keyword,
+.user-notes-editor-content pre .hljs-selector-tag {
+  color: oklch(0.72 0.18 310);
+}
+
+.user-notes-editor-content pre .hljs-emphasis {
+  font-style: italic;
+}
+
+.user-notes-editor-content pre .hljs-strong {
+  font-weight: 700;
 }
