@@ -64,6 +64,7 @@ export const videos = pgTable("videos", {
     transcript: text("transcript"),
     blogContent: text("blogContent"),
     userNotes: text("userNotes"),
+    customPrompt: text("customPrompt"),
     createdAt: timestamp("createdAt").notNull().defaultNow(),
     updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });

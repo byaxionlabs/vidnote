@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { url } = await request.json();
+        const { url, customPrompt } = await request.json();
 
         if (!url) {
             return NextResponse.json({ error: "URL is required" }, { status: 400 });
@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
             title: metadata.title,
             thumbnailUrl,
             transcript: "",
+            customPrompt: customPrompt || null,
             createdAt: new Date(),
             updatedAt: new Date(),
         };

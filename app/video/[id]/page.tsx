@@ -57,6 +57,7 @@ interface VideoData {
   title: string;
   thumbnailUrl: string;
   createdAt: string;
+  customPrompt?: string | null;
 }
 
 // Helper to format seconds to MM:SS
@@ -689,11 +690,11 @@ function VideoContent({ id }: { id: string }) {
     setExtractionPhase("streaming");
 
     // Fire both streams in parallel
-    notesComplete(video.youtubeUrl);
+    notesComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt } });
 
     if (!hasStartedBlogRef.current) {
       hasStartedBlogRef.current = true;
-      blogComplete(video.youtubeUrl);
+      blogComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt } });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldExtract, video, loading, userApiKey]);
@@ -795,8 +796,8 @@ function VideoContent({ id }: { id: string }) {
     hasStartedBlogRef.current = false;
 
     // Fire both streams
-    notesComplete(video.youtubeUrl);
-    blogComplete(video.youtubeUrl);
+    notesComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt } });
+    blogComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt } });
 
     setIsRegenerating(false);
   };

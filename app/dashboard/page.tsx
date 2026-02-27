@@ -47,6 +47,8 @@ export default function Dashboard() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [url, setUrl] = useState("");
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -99,6 +101,8 @@ export default function Dashboard() {
     setShowModal(true);
     setError("");
     setUrl("");
+    setCustomPrompt("");
+    setShowAdvanced(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -164,7 +168,7 @@ export default function Dashboard() {
       const res = await fetch("/api/videos/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, customPrompt }),
       });
 
       const data = await res.json();
@@ -526,6 +530,37 @@ export default function Dashboard() {
                 <p className="text-xs text-muted-foreground mt-2">
                   Only videos from Theo&apos;s channel are supported
                 </p>
+              </div>
+
+              {/* Advanced Options Toggle */}
+              <div className="mb-5">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <span className="font-medium">Advanced Options</span>
+                  <span className={`transform transition-transform ${showAdvanced ? "rotate-180" : ""}`}>
+                    ▼
+                  </span>
+                </button>
+
+                {showAdvanced && (
+                  <div className="mt-4 p-4 bg-muted/30 rounded-xl border border-border">
+                    <label className="block text-sm font-medium mb-2 text-foreground">
+                      Custom Prompt (Optional)
+                    </label>
+                    <textarea
+                      value={customPrompt}
+                      onChange={(e) => setCustomPrompt(e.target.value)}
+                      placeholder="E.g., Focus specifically on the system architecture and database design parts, ignore the sponsor segment."
+                      className="w-full px-4 py-3 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all resize-none min-h-[100px]"
+                    />
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Add specific instructions for the AI on what to focus on during extraction.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {error && (

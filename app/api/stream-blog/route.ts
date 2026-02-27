@@ -20,7 +20,9 @@ export async function POST(request: Request) {
         return new Response("Unauthorized", { status: 401 });
     }
 
-    const { prompt: url } = await request.json();
+    const body = await request.json();
+    const url = body.prompt;
+    const customPrompt = body.customPrompt || null;
 
     if (!url) {
         return new Response(JSON.stringify({ error: "URL is required" }), {
@@ -81,6 +83,11 @@ Write the article in clean Markdown. Use ## for main sections, ### for subsectio
 Include code examples in fenced code blocks with language tags when relevant.
 Use > blockquotes for notable quotes or hot takes from the video.`;
 
+    // If the user provided a custom prompt, append it as additional instructions
+    const finalBlogPrompt = customPrompt
+        ? `${blogPrompt}\n\nADDITIONAL USER INSTRUCTIONS:\n${customPrompt}`
+        : blogPrompt;
+
     console.log(`[API/stream-blog] Gemini request for video: ${videoId} at ${new Date().toISOString()}`);
 
     // Require user-provided API key (BYOK only)
@@ -108,7 +115,7 @@ Use > blockquotes for notable quotes or hot takes from the video.`;
                     },
                     {
                         type: "text",
-                        text: blogPrompt,
+                        text: finalBlogPrompt,
                     },
                 ],
             },

@@ -25,6 +25,7 @@ export interface VideoResponse {
   points: VideoPoint[];
   blogContent?: string | null;
   userNotes?: string | null;
+  customPrompt?: string | null;
 }
 
 export function dashboardQueryKey(userId: string) {

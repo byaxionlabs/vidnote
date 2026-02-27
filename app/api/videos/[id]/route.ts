@@ -35,7 +35,7 @@ export async function GET(
             .where(eq(actionablePoints.videoId, id))
             .orderBy(actionablePoints.order);
 
-        return NextResponse.json({ video, points, blogContent: video.blogContent || null, userNotes: video.userNotes || null });
+        return NextResponse.json({ video, points, blogContent: video.blogContent || null, userNotes: video.userNotes || null, customPrompt: video.customPrompt || null });
     } catch (error) {
         console.error("Error fetching video:", error);
         return NextResponse.json(

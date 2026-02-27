@@ -23,6 +23,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     // Support both { url } (legacy useObject) and { prompt } (useCompletion) formats
     const url = body.url || body.prompt;
+    const customPrompt = body.customPrompt || null;
 
     if (!url) {
         return new Response(JSON.stringify({ error: "URL is required" }), {
@@ -103,6 +104,11 @@ Rules:
 - Timestamps should be ACCURATE to where the point is actually discussed in the video
 - category meanings: action = things to DO, remember = key facts to REMEMBER, insight = deeper "aha moments"`;
 
+    // If the user provided a custom prompt, append it as additional instructions
+    const finalPrompt = customPrompt
+        ? `${textPrompt}\n\nADDITIONAL USER INSTRUCTIONS:\n${customPrompt}`
+        : textPrompt;
+
 
     console.log(`[API/stream] Gemini request for video: ${videoId} at ${new Date().toISOString()}`);
 
@@ -134,7 +140,7 @@ Rules:
                     },
                     {
                         type: "text",
-                        text: textPrompt,
+                        text: finalPrompt,
                     },
                 ],
             },
