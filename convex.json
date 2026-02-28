@@ -1,0 +1,11 @@
+{
+    "functions": "convex/",
+    "node": {
+        "externalPackages": [
+            "@ai-sdk/google",
+            "ai",
+            "zod",
+            "youtube-transcript"
+        ]
+    }
+}
