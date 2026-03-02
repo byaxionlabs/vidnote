@@ -1,7 +1,6 @@
 import { streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getToken } from "@/lib/auth-server";
 import {
     extractVideoId,
     getVideoMetadata,
@@ -12,17 +11,16 @@ import {
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    });
+    const token = await getToken();
 
-    if (!session?.user) {
+    if (!token) {
         return new Response("Unauthorized", { status: 401 });
     }
 
     const body = await request.json();
     const url = body.prompt;
     const customPrompt = body.customPrompt || null;
+    const clientTitle = body.title || null;
 
     if (!url) {
         return new Response(JSON.stringify({ error: "URL is required" }), {
@@ -39,29 +37,35 @@ export async function POST(request: Request) {
         });
     }
 
-    // Get video metadata
-    let metadata;
-    try {
-        metadata = await getVideoMetadata(videoId);
-    } catch (err) {
-        return new Response(
-            JSON.stringify({ error: err instanceof Error ? err.message : "Failed to fetch video metadata" }),
-            { status: 500, headers: { "Content-Type": "application/json" } },
-        );
-    }
+    // If the client already sent the title (from DB), skip the oEmbed fetch
+    // and channel validation — already validated on the dashboard.
+    let videoTitle = clientTitle;
 
-    // Validate that the video is from Theo's channel
-    if (!isTheoChannel(metadata.authorUrl)) {
-        return new Response(JSON.stringify({ error: "This app only works with Theo's videos." }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-        });
+    if (!videoTitle) {
+        let metadata;
+        try {
+            metadata = await getVideoMetadata(videoId);
+        } catch (err) {
+            return new Response(
+                JSON.stringify({ error: err instanceof Error ? err.message : "Failed to fetch video metadata" }),
+                { status: 500, headers: { "Content-Type": "application/json" } },
+            );
+        }
+
+        if (!isTheoChannel(metadata.authorUrl)) {
+            return new Response(JSON.stringify({ error: "This app only works with Theo's videos." }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+
+        videoTitle = metadata.title;
     }
 
     // Normalize YouTube URL for AI
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-    const blogPrompt = `You are a skilled tech blogger and writer. Given the YouTube video titled "${metadata.title}" by Theo (t3dotgg), write a comprehensive, in-depth blog article that covers ALL the content discussed in the video.
+    const blogPrompt = `You are a skilled tech blogger and writer. Given the YouTube video titled "${videoTitle}" by Theo (t3dotgg), write a comprehensive, in-depth blog article that covers ALL the content discussed in the video.
 
 WRITING GUIDELINES:
 - Write in a professional but engaging tone, similar to a high-quality tech blog post

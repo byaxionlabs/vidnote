@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getToken } from "@/lib/auth-server";
 
 // Test a Gemini API key by making a lightweight models.list call
 export async function POST(request: Request) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    });
+    const token = await getToken();
 
-    if (!session?.user) {
+    if (!token) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

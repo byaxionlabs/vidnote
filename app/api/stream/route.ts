@@ -1,7 +1,6 @@
 import { streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getToken } from "@/lib/auth-server";
 import {
     extractVideoId,
     getVideoMetadata,
@@ -12,11 +11,9 @@ import {
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    });
+    const token = await getToken();
 
-    if (!session?.user) {
+    if (!token) {
         return new Response("Unauthorized", { status: 401 });
     }
 
@@ -24,6 +21,9 @@ export async function POST(request: Request) {
     // Support both { url } (legacy useObject) and { prompt } (useCompletion) formats
     const url = body.url || body.prompt;
     const customPrompt = body.customPrompt || null;
+    // The client can pass the video title directly (from Convex DB) to skip
+    // the redundant oEmbed fetch that was adding 1-5s of latency.
+    const clientTitle = body.title || null;
 
     if (!url) {
         return new Response(JSON.stringify({ error: "URL is required" }), {
@@ -40,33 +40,32 @@ export async function POST(request: Request) {
         });
     }
 
-    // Get video metadata
-    let metadata;
-    try {
-        metadata = await getVideoMetadata(videoId);
-    } catch (err) {
-        return new Response(
-            JSON.stringify({ error: err instanceof Error ? err.message : "Failed to fetch video metadata" }),
-            { status: 500, headers: { "Content-Type": "application/json" } },
-        );
-    }
+    // If the client already sent the title (from DB), skip the oEmbed fetch
+    // and channel validation — the dashboard already validated the channel
+    // before creating the video. This saves 1-5s of latency per request.
+    let videoTitle = clientTitle;
 
+    if (!videoTitle) {
+        // Fallback: fetch metadata from YouTube oEmbed API
+        let metadata;
+        try {
+            metadata = await getVideoMetadata(videoId);
+        } catch (err) {
+            return new Response(
+                JSON.stringify({ error: err instanceof Error ? err.message : "Failed to fetch video metadata" }),
+                { status: 500, headers: { "Content-Type": "application/json" } },
+            );
+        }
 
-    // Validate that the video is from Theo's channel
-    if (!isTheoChannel(metadata.authorUrl)) {
-        const funnyMessages = [
-            "🚫 Hold up! This app is EXCLUSIVELY for Theo's videos. We're loyal fans here! Go find a video from @t3dotgg and try again.",
-            "😤 Excuse me? That's not a Theo video! This app only speaks fluent @t3dotgg. Please try again with authentic Theo content!",
-            "🙅 Nice try, but this isn't a Theo video! We're ride-or-die for @t3dotgg here. Bring us the real deal!",
-            "⚠️ WARNING: Non-Theo video detected! This app runs on pure @t3dotgg energy. Find a video from Theo and come back!",
-            "🤨 That video isn't from Theo's channel... Are you trying to cheat on @t3dotgg? We don't do that here!",
-        ];
-        const randomMessage =
-            funnyMessages[Math.floor(Math.random() * funnyMessages.length)];
-        return new Response(JSON.stringify({ error: randomMessage }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-        });
+        // Validate channel only when we had to fetch metadata ourselves
+        if (!isTheoChannel(metadata.authorUrl)) {
+            return new Response(JSON.stringify({ error: "This app only works with Theo's videos from @t3dotgg." }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+
+        videoTitle = metadata.title;
     }
 
     // Normalize YouTube URL for AI
@@ -79,7 +78,7 @@ export async function POST(request: Request) {
     // them one at a time as they arrive.
     const textPrompt = `You are an expert at extracting actionable insights from educational content.
 
-Given the YouTube video titled "${metadata.title}", extract actionable insights.
+Given the YouTube video titled "${videoTitle}", extract actionable insights.
 
 OUTPUT FORMAT — you MUST output EXACTLY one point per line using this format:
 [category|timestamp] content
@@ -133,11 +132,11 @@ Rules:
             {
                 role: "user",
                 content: [
-                    {
-                        type: "file",
-                        data: youtubeUrl,
-                        mediaType: "video/mp4",
-                    },
+                    // {
+                    //     type: "file",
+                    //     data: youtubeUrl,
+                    //     mediaType: "video/mp4",
+                    // },
                     {
                         type: "text",
                         text: finalPrompt,
