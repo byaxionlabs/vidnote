@@ -7,6 +7,7 @@ import { betterAuth } from "better-auth/minimal";
 import authConfig from "./auth.config";
 
 const siteUrl = process.env.SITE_URL!;
+const frontendUrl = process.env.FRONTEND_URL!;
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
@@ -24,7 +25,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
             convex({ authConfig }),
         ],
         secret: process.env.BETTER_AUTH_SECRET,
-        trustedOrigins: ["http://localhost:3000"]
+        trustedOrigins: ["http://localhost:3000", `${frontendUrl}`]
     })
 }
 
