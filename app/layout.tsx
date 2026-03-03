@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
-import { QueryProvider } from "@/components/query-provider";
+
 import { Toaster } from "sonner";
+import { ConvexClientProvider } from "./ConvexClientProvider";
 
 export const metadata: Metadata = {
   title: "Theo Notes - Actionable Insights from Theo's Videos",
@@ -39,18 +40,18 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <ThemeProvider>
-          <QueryProvider>
+          <ConvexClientProvider>
             {children}
-            <Toaster
-              position="top-right"
-              richColors
-              toastOptions={{
-                style: {
-                  fontFamily: "var(--font-sans)",
-                },
-              }}
-            />
-          </QueryProvider>
+          </ConvexClientProvider>
+          <Toaster
+            position="top-right"
+            richColors
+            toastOptions={{
+              style: {
+                fontFamily: "var(--font-sans)",
+              },
+            }}
+          />
         </ThemeProvider>
       </body>
     </html>

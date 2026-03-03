@@ -11,6 +11,9 @@ import TaskItem from "@tiptap/extension-task-item";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import {
     Bold,
     Italic,
@@ -50,6 +53,7 @@ export default function UserNotesEditor({
     >("idle");
     const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastSavedContentRef = useRef<string | null>(initialContent ?? null);
+    const updateNotesMutation = useMutation(api.notes.updateNotes);
 
     const editor = useEditor({
         immediatelyRender: false,
@@ -90,19 +94,17 @@ export default function UserNotesEditor({
 
             setSaveStatus("saving");
             try {
-                const res = await fetch(`/api/videos/${videoId}/notes`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ userNotes: json }),
+                await updateNotesMutation({
+                    videoId: videoId as Id<"videos">,
+                    userNotes: json,
                 });
-                if (!res.ok) throw new Error("Save failed");
                 lastSavedContentRef.current = json;
                 setSaveStatus("saved");
             } catch {
                 setSaveStatus("error");
             }
         },
-        [videoId]
+        [videoId, updateNotesMutation]
     );
 
     // Cleanup timeout on unmount

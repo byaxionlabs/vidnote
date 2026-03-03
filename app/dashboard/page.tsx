@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery as useQueryWithCache } from "convex-helpers/react/cache/hooks";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -26,8 +29,8 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ApiKeySettings } from "@/components/api-key-settings";
 import { hasStoredApiKey, loadApiKey, isValidApiKeyFormat } from "@/lib/api-key";
-import { dashboardQueryKey, fetchDashboard } from "@/lib/queries";
-import { prefetchVideo } from "@/lib/prefetch";
+import { extractVideoId, getYouTubeThumbnail } from "@/lib/youtube";
+
 import { toast } from "sonner";
 
 interface VideoItem {
@@ -39,12 +42,18 @@ interface VideoItem {
   createdAt: string;
 }
 
+// Module-level cache — survives across component remounts
+let _hasAuthenticated = false;
+let _cachedVideos: VideoItem[] = [];
+
 export default function Dashboard() {
   const { data: session, isPending } = useSession();
   const router = useRouter();
-  const queryClient = useQueryClient();
+
+  // Track auth at module level so it survives remounts
+  if (session) _hasAuthenticated = true;
+
   const userId = session?.user.id;
-  const [videos, setVideos] = useState<VideoItem[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [url, setUrl] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
@@ -62,29 +71,46 @@ export default function Dashboard() {
     }
   }, [session, isPending, router]);
 
-  const { data: dashboardData, isLoading } = useQuery({
-    queryKey: dashboardQueryKey(userId ?? ""),
-    queryFn: fetchDashboard,
-    enabled: Boolean(userId),
-  });
+  const dashboardVideos = useQueryWithCache(api.videos.getDashboardVideos);
+  const isLoading = dashboardVideos === undefined;
 
-  useEffect(() => {
-    if (dashboardData?.videos) {
-      setVideos(dashboardData.videos);
-    }
-  }, [dashboardData]);
+  // Derive videos directly from the cached query — no useEffect delay.
+  // Falls back to module-level cache on route re-entry.
+  const videos: VideoItem[] = useMemo(() => {
+    if (!dashboardVideos) return _cachedVideos;
+    const mapped = dashboardVideos.map((v: any) => ({
+      id: v._id as string,
+      youtubeUrl: v.youtubeUrl,
+      youtubeId: v.youtubeId,
+      title: v.title || "",
+      thumbnailUrl: v.thumbnailUrl || "",
+      createdAt: new Date(v._creationTime).toISOString(),
+    }));
+    _cachedVideos = mapped; // persist for next mount
+    return mapped;
+  }, [dashboardVideos]);
 
   useEffect(() => {
     if (session) setHasApiKey(hasStoredApiKey());
   }, [session]);
 
-  // Prefetch video data on hover so navigation feels instant
-  const handlePrefetchVideo = useCallback(
-    (videoId: string) => prefetchVideo(queryClient, videoId),
-    [queryClient],
-  );
+  // ── Hover prewarming ─────────────────────────────────────────────────
+  // Render hidden components on hover that register Convex subscriptions
+  // in the cache registry. When the video page mounts, data is instant.
+  const [prewarmedIds, setPrewarmedIds] = useState<Set<string>>(new Set());
+
+  const handlePrefetchVideo = useCallback((videoId: string) => {
+    setPrewarmedIds(prev => {
+      if (prev.has(videoId)) return prev;
+      const next = new Set(prev);
+      next.add(videoId);
+      return next;
+    });
+    router.prefetch(`/video/${videoId}`);
+  }, [router]);
 
   const [submitting, setSubmitting] = useState(false);
+  const createFastVideoMutation = useMutation(api.videos.createFastVideo);
 
   // Check API key before showing the modal
   const handleAddVideoClick = () => {
@@ -116,7 +142,7 @@ export default function Dashboard() {
 
     try {
       // Step 1: Load and validate the API key format
-      const apiKey = await loadApiKey(session!.user.id);
+      const apiKey = await loadApiKey(session?.user?.id ?? "");
       if (!apiKey) {
         toast.error("API key not found", {
           description: "Please add your Gemini API key in settings.",
@@ -141,66 +167,76 @@ export default function Dashboard() {
         return;
       }
 
-      // Step 2: Validate the API key with Google
-      const validateRes = await fetch("/api/validate-key", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-gemini-api-key": apiKey,
-        },
-      });
-
-      const validateData = await validateRes.json();
-
-      if (!validateData.valid) {
-        toast.error("API key validation failed", {
-          description: validateData.error || "Your API key is invalid. Please check and update it.",
-          action: {
-            label: "Update Key",
-            onClick: () => { setShowModal(false); setShowApiKeyModal(true); },
-          },
-        });
+      // Step 2: Extract YouTube ID and check for existing video
+      const videoId = extractVideoId(url);
+      if (!videoId) {
+        toast.error("Invalid URL", { description: "Please enter a valid YouTube video URL." });
         setSubmitting(false);
         return;
       }
 
-      // Step 3: Create the video record
-      const res = await fetch("/api/videos/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, customPrompt }),
-      });
+      const existingVideo = videos.find(v => v.youtubeId === videoId);
+      if (existingVideo) {
+        toast.success("Video already exists!", { description: "Taking you to the notes." });
+        setShowModal(false);
+        router.push(`/video/${existingVideo.id}`);
+        setSubmitting(false);
+        return;
+      }
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        // Handle duplicate video — offer to navigate to existing one
-        if (res.status === 409 && data.existingVideoId) {
-          toast.info("Video already exists", {
-            description: "You've already added this video. View your existing notes.",
-            action: {
-              label: "View Notes",
-              onClick: () => router.push(`/video/${data.existingVideoId}`),
-            },
-          });
-          setShowModal(false);
+      // Step 3: Validate that it's a Theo video before creating
+      try {
+        const oembedRes = await fetch(
+          `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
+          { signal: AbortSignal.timeout(10000) }
+        );
+        if (!oembedRes.ok) {
+          setError("Could not verify the video. Please check the URL and try again.");
           setSubmitting(false);
           return;
         }
-        setError(data.error || "Failed to create video");
+        const oembedData = await oembedRes.json();
+        const authorUrl: string = oembedData.author_url || "";
+        const theoPatterns = [
+          /youtube\.com\/@t3dotgg/i,
+          /youtube\.com\/c\/t3dotgg/i,
+          /youtube\.com\/channel\/UCbRP3c757lWg9M-U7TyEkXA/i,
+        ];
+        const isTheo = theoPatterns.some(p => p.test(authorUrl));
+        if (!isTheo) {
+          const funnyMessages = [
+            "🚫 Hold up! This app is EXCLUSIVELY for Theo's videos. We're loyal fans here! Go find a video from @t3dotgg and try again.",
+            "😤 Excuse me? That's not a Theo video! This app only speaks fluent @t3dotgg. Please try again with authentic Theo content!",
+            "🙅 Nice try, but this isn't a Theo video! We're ride-or-die for @t3dotgg here. Bring us the real deal!",
+            "⚠️ WARNING: Non-Theo video detected! This app runs on pure @t3dotgg energy. Find a video from Theo and come back!",
+            "🤨 That video isn't from Theo's channel... Are you trying to cheat on @t3dotgg? We don't do that here!",
+          ];
+          setError(funnyMessages[Math.floor(Math.random() * funnyMessages.length)]);
+          setSubmitting(false);
+          return;
+        }
+      } catch {
+        setError("Could not verify the video channel. Please check your connection and try again.");
         setSubmitting(false);
         return;
       }
+
+      // Step 4: Fast Create & Instant Navigate!
+      const thumbnailUrl = getYouTubeThumbnail(videoId);
+
+      const newVideoId = await createFastVideoMutation({
+        url,
+        youtubeId: videoId,
+        thumbnailUrl,
+        customPrompt
+      });
 
       // Navigate to the video page with extract flag — streaming happens there
       toast.success("Video added!", {
         description: "Extracting notes now...",
       });
-      if (userId) {
-        queryClient.invalidateQueries({ queryKey: dashboardQueryKey(userId) });
-      }
       setShowModal(false);
-      router.push(`/video/${data.video.id}?extract=true`);
+      router.push(`/video/${newVideoId}?extract=true`);
       setUrl("");
     } catch {
       toast.error("Network error", {
@@ -211,26 +247,14 @@ export default function Dashboard() {
     }
   };
 
+  const deleteVideoMutation = useMutation(api.videos.deleteVideo);
+
   const handleDelete = async (id: string) => {
     setDeletingId(id);
     setDeleteError("");
     try {
-      const res = await fetch(`/api/videos/${id}`, { method: "DELETE" });
+      await deleteVideoMutation({ videoId: id as Id<"videos"> });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to delete video");
-      }
-
-      setVideos((prevVideos) => {
-        const nextVideos = prevVideos.filter((v) => v.id !== id);
-        if (userId) {
-          queryClient.setQueryData(dashboardQueryKey(userId), {
-            videos: nextVideos,
-          });
-        }
-        return nextVideos;
-      });
       setDeleteConfirmId(null);
       toast.success("Video deleted", {
         description: "The video and all its notes have been removed.",
@@ -246,7 +270,8 @@ export default function Dashboard() {
     }
   };
 
-  if (isPending || !session) {
+  // Only show full-page auth loader on first-ever visit.
+  if ((isPending || !session) && !_hasAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="loader"></div>
@@ -256,6 +281,10 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Hidden prewarm queries — registers Convex subscriptions in cache */}
+      {Array.from(prewarmedIds).map(vid => (
+        <PrewarmVideo key={vid} videoId={vid} />
+      ))}
       {/* Decorative Background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-0 left-1/2 w-[800px] h-[400px] bg-primary/3 rounded-full blur-3xl transform -translate-x-1/2 -translate-y-1/2"></div>
@@ -311,14 +340,17 @@ export default function Dashboard() {
                 <User size={18} className="text-primary" />
               </div>
               <div className="flex-1 min-w-0 ">
-                <p className="text-sm font-medium text-foreground truncate">{session.user.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
+                <p className="text-sm font-medium text-foreground truncate">{session?.user?.name}</p>
+                <p className="text-xs text-muted-foreground truncate">{session?.user?.email}</p>
               </div>
             </div>
             <ThemeToggle />
           </div>
           <button
-            onClick={() => signOut()}
+            onClick={() => {
+              _hasAuthenticated = false;
+              signOut().then(() => router.push("/"));
+            }}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-border rounded-xl text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-all text-sm"
           >
             <LogOut size={16} />
@@ -349,7 +381,10 @@ export default function Dashboard() {
             </button>
             <ThemeToggle />
             <button
-              onClick={() => signOut()}
+              onClick={() => {
+                _hasAuthenticated = false;
+                signOut().then(() => router.push("/"));
+              }}
               className="w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-destructive"
             >
               <LogOut size={18} />
@@ -381,7 +416,7 @@ export default function Dashboard() {
           </div>
 
           {/* Videos Grid */}
-          {isLoading ? (
+          {isLoading && videos.length === 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -434,7 +469,7 @@ export default function Dashboard() {
                         className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                       {/* Overlay */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
+                      <div className="absolute inset-0 bg-linear-to-t from-background/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
                         <span className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg shadow-md">
                           <CheckCircle2 size={16} />
                           View Notes
@@ -652,7 +687,7 @@ export default function Dashboard() {
       )}
       {/* API Key Settings Modal */}
       <ApiKeySettings
-        userId={session.user.id}
+        userId={session?.user?.id ?? ""}
         isOpen={showApiKeyModal}
         onClose={() => {
           setShowApiKeyModal(false);
@@ -661,4 +696,15 @@ export default function Dashboard() {
       />
     </div>
   );
+}
+
+// Hidden component that registers a Convex query subscription in the
+// convex-helpers cache. When the user navigates to /video/[id], the
+// useQueryCached call finds the data already warm — no skeleton.
+function PrewarmVideo({ videoId }: { videoId: string }) {
+  useQueryWithCache(
+    api.videos.getVideoById,
+    { videoId: videoId as Id<"videos"> }
+  );
+  return null;
 }

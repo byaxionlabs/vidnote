@@ -5,14 +5,15 @@ import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.min.css";
 import { useSession } from "@/lib/auth-client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import Image from "next/image";
 import { useCompletion } from "@ai-sdk/react";
 import { type ActionablePoint } from "@/lib/schemas";
 import { loadApiKey } from "@/lib/api-key";
-import { fetchVideoById, videoQueryKey, dashboardQueryKey, type VideoResponse } from "@/lib/queries";
-import { prefetchDashboard } from "@/lib/prefetch";
+import { useQuery as useQueryCached } from "convex-helpers/react/cache/hooks";
+import { useMutation as useMutationConvex } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -296,11 +297,13 @@ export default function VideoPage({ params }: { params: Promise<{ id: string }> 
 
 // ─── Core Component ────────────────────────────────────────────────────────
 
+// Module-level auth tracker — survives component remounts
+let _videoPageHasAuth = false;
+
 function VideoContent({ id }: { id: string }) {
   const searchParams = useSearchParams();
   const { data: session, isPending } = useSession();
   const router = useRouter();
-  const queryClient = useQueryClient();
 
   const shouldExtract = searchParams.get("extract") === "true";
 
@@ -333,9 +336,8 @@ function VideoContent({ id }: { id: string }) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
-  // Auth tracking
-  const hasAuthenticatedRef = useRef(false);
-  if (session) hasAuthenticatedRef.current = true;
+  // Auth tracking (module-level so it survives remounts)
+  if (session) _videoPageHasAuth = true;
 
   const hasStartedExtractionRef = useRef(false);
   const hasStartedBlogRef = useRef(false);
@@ -343,10 +345,7 @@ function VideoContent({ id }: { id: string }) {
   // ── Prewarm dashboard cache ────────────────────────────────────────────
   // So navigating back to /dashboard is instant (no loading skeleton).
   useEffect(() => {
-    if (session?.user?.id) {
-      prefetchDashboard(queryClient, session.user.id);
-    }
-  }, [session?.user?.id, queryClient]);
+  }, [session?.user?.id]);
 
   // ── BYOK: load user's API key ─────────────────────────────────────────
   // Use state (not just a ref) so that useObject/useCompletion hooks
@@ -460,6 +459,18 @@ function VideoContent({ id }: { id: string }) {
       const validPoints = parseStreamedPoints(completion);
 
       if (validPoints.length === 0) {
+        // If this was the initial extraction, clean up the orphaned video
+        if (shouldExtract) {
+          toast.error("Extraction failed", {
+            description: "No insights were extracted from this video. Redirecting you back to the dashboard...",
+          });
+          deleteVideoMutation({ videoId: id as Id<"videos"> })
+            .catch(() => { /* best-effort cleanup */ })
+            .finally(() => {
+              router.push("/dashboard");
+            });
+          return;
+        }
         setError("No insights were extracted from this video. Please try again.");
         setExtractionPhase("error");
         return;
@@ -468,30 +479,18 @@ function VideoContent({ id }: { id: string }) {
       // Save points to the database
       setExtractionPhase("saving");
       try {
-        const saveRes = await fetch(`/api/videos/${id}/points`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ points: validPoints }),
-        });
+        const pointRecords = validPoints.map((p, idx) => ({ ...p, order: idx }));
+        const pointIds = await createPointsMutation({ videoId: id as Id<"videos">, points: pointRecords });
 
-        if (!saveRes.ok) {
-          const saveData = await saveRes.json();
-          setError(saveData.error || "Failed to save notes");
-          setExtractionPhase("error");
-          return;
-        }
+        setPoints(pointRecords.map((p, i) => ({
+          id: pointIds[i],
+          content: p.content,
+          category: p.category,
+          timestamp: p.timestamp ?? null,
+          isCompleted: false,
+          order: p.order
+        })));
 
-        const saveData = await saveRes.json();
-
-        setPoints(saveData.points);
-        if (video) {
-          queryClient.setQueryData<VideoResponse>(videoQueryKey(id), (current) => ({
-            ...current,
-            video,
-            points: saveData.points,
-            blogContent,
-          }));
-        }
         setExtractionPhase("done");
         setIsExtracting(false);
 
@@ -502,26 +501,53 @@ function VideoContent({ id }: { id: string }) {
       }
     },
     onError: (err) => {
-      // Parse error for user-friendly messages
       const msg = err.message || "";
+      const msgLower = msg.toLowerCase();
+      let toastTitle: string;
       let errorMsg: string;
-      if (msg.includes("429") || msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("quota")) {
-        errorMsg = "Rate limit reached. The Gemini API free tier has usage limits. Please wait a minute and try again.";
-        toast.error("Rate limit reached", {
-          description: "The Gemini API free tier has usage limits. Please wait a minute and try again.",
-        });
+
+      if (msg.includes("503") || msgLower.includes("unavailable") || msgLower.includes("high demand") || msgLower.includes("overloaded")) {
+        toastTitle = "Gemini is busy right now";
+        errorMsg = "The AI is experiencing a surge in traffic. This usually clears up quickly — give it a couple of minutes and try again!";
+      } else if (msg.includes("429") || msgLower.includes("rate limit") || msgLower.includes("quota") || msgLower.includes("resource_exhausted")) {
+        toastTitle = "Too many requests";
+        errorMsg = "You've hit the usage limit for the free Gemini tier. Wait about a minute before adding another video.";
       } else if (msg.includes("API key")) {
-        errorMsg = msg;
-        toast.error("API key error", { description: msg });
-      } else if (msg.includes("401") || msg.includes("403") || msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("invalid")) {
-        errorMsg = "Your API key appears to be invalid. Please check your key in the API Key settings on the dashboard.";
-        toast.error("Invalid API key", {
-          description: "Please check your key in the API Key settings on the dashboard.",
-        });
+        toastTitle = "Check your API key";
+        errorMsg = "There's an issue with your Gemini API key. Head to the dashboard and update it in the API Key settings.";
+      } else if (msg.includes("401") || msg.includes("403") || msgLower.includes("unauthorized") || msgLower.includes("invalid") || msgLower.includes("permission_denied")) {
+        toastTitle = "API key not working";
+        errorMsg = "Your Gemini API key was rejected. Double-check that it's correct in the API Key settings on the dashboard.";
+      } else if (msg.includes("408") || msgLower.includes("timeout") || msgLower.includes("timed out") || msgLower.includes("deadline")) {
+        toastTitle = "Took too long";
+        errorMsg = "The request timed out — this can happen with longer videos or when the AI is under heavy load. Try again in a moment!";
+      } else if (msgLower.includes("network") || msgLower.includes("fetch failed") || msgLower.includes("econnrefused") || msgLower.includes("enotfound")) {
+        toastTitle = "Connection issue";
+        errorMsg = "Couldn't reach the server. Check your internet connection and give it another shot.";
+      } else if (msg.includes("500") || msgLower.includes("internal")) {
+        toastTitle = "Something went wrong";
+        errorMsg = "We hit an unexpected error on our end. Hang tight and try again in a few moments.";
       } else {
-        errorMsg = msg || "Failed to extract insights. Please try again.";
-        toast.error("Extraction failed", { description: errorMsg });
+        toastTitle = "Couldn't extract notes";
+        errorMsg = "Something didn't go as planned. Please try adding this video again.";
       }
+
+      // If this was the initial extraction (fresh video), clean up the orphaned video
+      // and redirect back to dashboard so the user can retry cleanly.
+      if (shouldExtract && points.length === 0) {
+        toast.error(toastTitle, {
+          description: errorMsg,
+          duration: 6000,
+        });
+        deleteVideoMutation({ videoId: id as Id<"videos"> })
+          .catch(() => { /* best-effort cleanup */ })
+          .finally(() => {
+            router.push("/dashboard");
+          });
+        return;
+      }
+
+      toast.error(toastTitle, { description: errorMsg, duration: 6000 });
       setError(errorMsg);
       setExtractionPhase("error");
     },
@@ -550,18 +576,10 @@ function VideoContent({ id }: { id: string }) {
     headers: apiKeyHeaders,
     onFinish: async (_prompt, completion) => {
       setBlogContent(completion);
-      queryClient.setQueryData<VideoResponse>(videoQueryKey(id), (current) => {
-        if (!current) return current;
-        return { ...current, blogContent: completion };
-      });
 
       // Save the blog to the database
       try {
-        await fetch(`/api/videos/${id}/blog`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blogContent: completion }),
-        });
+        await updateBlogContentMutation({ videoId: id as Id<"videos">, blogContent: completion });
         setBlogSaved(true);
       } catch {
         console.error("Failed to save blog content");
@@ -569,13 +587,31 @@ function VideoContent({ id }: { id: string }) {
     },
     onError: (err) => {
       const msg = err.message || "";
-      if (msg.includes("429") || msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("quota")) {
-        toast.error("Blog rate limited", {
-          description: "Rate limit reached for blog generation. Try again later.",
+      const msgLower = msg.toLowerCase();
+      if (msg.includes("503") || msgLower.includes("unavailable") || msgLower.includes("high demand") || msgLower.includes("overloaded")) {
+        toast.error("Blog skipped — Gemini is busy", {
+          description: "The AI is swamped right now. Your notes are safe — you can regenerate the blog later!",
+          duration: 5000,
+        });
+      } else if (msg.includes("429") || msgLower.includes("rate limit") || msgLower.includes("quota") || msgLower.includes("resource_exhausted")) {
+        toast.error("Blog skipped — too many requests", {
+          description: "You've hit the usage limit. The blog can be regenerated once the limit resets (~1 min).",
+          duration: 5000,
+        });
+      } else if (msg.includes("408") || msgLower.includes("timeout") || msgLower.includes("timed out") || msgLower.includes("deadline")) {
+        toast.error("Blog took too long", {
+          description: "The blog generation timed out. You can try regenerating it anytime!",
+          duration: 5000,
+        });
+      } else if (msgLower.includes("network") || msgLower.includes("fetch failed") || msgLower.includes("econnrefused")) {
+        toast.error("Blog skipped — connection issue", {
+          description: "Couldn't reach the server for blog generation. Check your connection and regenerate later.",
+          duration: 5000,
         });
       } else {
-        toast.error("Blog generation failed", {
-          description: msg || "Something went wrong while generating the blog article.",
+        toast.error("Blog couldn't be generated", {
+          description: "Something went wrong with the blog. Your notes are unaffected — you can regenerate the blog anytime.",
+          duration: 5000,
         });
       }
     },
@@ -639,22 +675,34 @@ function VideoContent({ id }: { id: string }) {
   }, [session, isPending, router]);
 
   // Fetch video data
-  const isAuthenticated = !!session;
-  const { data: videoData, isLoading: loading, error: videoLoadError } = useQuery({
-    queryKey: videoQueryKey(id),
-    queryFn: () => fetchVideoById(id),
-    enabled: isAuthenticated && Boolean(id),
-  });
+  // Valid IDs length for convex
+  const isValidId = id.length > 10;
+
+  const videoData = useQueryCached(
+    api.videos.getVideoById,
+    isValidId ? { videoId: id as Id<"videos"> } : "skip"
+  );
+
+  const loading = videoData === undefined;
+  const isVideoMissing = videoData === null && !loading;
 
   useEffect(() => {
-    if (videoLoadError) {
-      setError(videoLoadError instanceof Error ? videoLoadError.message : "Failed to load video");
+    if (isVideoMissing) {
+      router.push("/dashboard");
     }
-  }, [videoLoadError]);
+  }, [isVideoMissing, router]);
 
   useEffect(() => {
-    if (!videoData) return;
-    setVideo(videoData.video);
+    if (!videoData || videoData === null) return;
+    setVideo({
+      id: videoData.video._id as string,
+      youtubeUrl: videoData.video.youtubeUrl,
+      youtubeId: videoData.video.youtubeId,
+      title: videoData.video.title || "",
+      thumbnailUrl: videoData.video.thumbnailUrl || "",
+      createdAt: new Date(videoData.video._creationTime).toISOString(),
+      customPrompt: videoData.video.customPrompt
+    });
 
     if (videoData.blogContent) {
       setBlogContent(videoData.blogContent);
@@ -666,7 +714,14 @@ function VideoContent({ id }: { id: string }) {
     }
 
     if (!shouldExtract || videoData.points.length > 0) {
-      setPoints(videoData.points);
+      setPoints(videoData.points.map(p => ({
+        id: p._id as string,
+        content: p.content,
+        category: p.category || "",
+        timestamp: p.timestamp ?? null,
+        isCompleted: !!p.isCompleted,
+        order: p.order
+      })));
     }
   }, [shouldExtract, videoData]);
 
@@ -689,38 +744,65 @@ function VideoContent({ id }: { id: string }) {
     setIsExtracting(true);
     setExtractionPhase("streaming");
 
-    // Fire both streams in parallel
-    notesComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt } });
+    // Fire both streams in parallel — pass title to skip redundant oEmbed fetch
+    notesComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt, title: video.title } });
 
     if (!hasStartedBlogRef.current) {
       hasStartedBlogRef.current = true;
-      blogComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt } });
+      blogComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt, title: video.title } });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldExtract, video, loading, userApiKey]);
 
+  // ── Backfill placeholder title ────────────────────────────────────────
+  const updateVideoTitleMutation = useMutationConvex(api.videos.updateVideoTitle);
+  const hasFetchedTitleRef = useRef(false);
+
+  useEffect(() => {
+    if (
+      !video ||
+      !video.youtubeId ||
+      hasFetchedTitleRef.current ||
+      (video.title && video.title !== "Loading video info...")
+    ) return;
+
+    hasFetchedTitleRef.current = true;
+
+    fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${video.youtubeId}&format=json`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.title) {
+          setVideo(prev => prev ? { ...prev, title: data.title } : prev);
+          updateVideoTitleMutation({
+            videoId: id as Id<"videos">,
+            title: data.title,
+          }).catch(() => { });
+        }
+      })
+      .catch(() => { });
+  }, [video, id, updateVideoTitleMutation]);
+
   // ── Handlers ───────────────────────────────────────────────────────────
+
+  const updatePointMutation = useMutationConvex(api.points.updatePoint);
+  const deleteVideoMutation = useMutationConvex(api.videos.deleteVideo);
+  const createPointsMutation = useMutationConvex(api.points.createPoints);
+  const deletePointsMutation = useMutationConvex(api.points.deletePoints);
+  const updateBlogContentMutation = useMutationConvex(api.notes.updateBlogContent);
+  const deleteBlogContentMutation = useMutationConvex(api.notes.deleteBlogContent);
 
   const togglePoint = async (pointId: string, isCompleted: boolean) => {
     setUpdatingPoint(pointId);
     try {
-      await fetch(`/api/videos/${id}/points/${pointId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isCompleted: !isCompleted }),
+      await updatePointMutation({
+        videoId: id as Id<"videos">,
+        pointId: pointId as Id<"actionablePoints">,
+        isCompleted: !isCompleted
       });
       const updatedPoints = points.map((p) =>
         p.id === pointId ? { ...p, isCompleted: !isCompleted } : p,
       );
       setPoints(updatedPoints);
-      if (video) {
-        queryClient.setQueryData<VideoResponse>(videoQueryKey(id), (current) => ({
-          ...current,
-          video,
-          points: updatedPoints,
-          blogContent,
-        }));
-      }
     } catch (err) {
       console.error("Error updating point:", err);
     } finally {
@@ -732,21 +814,12 @@ function VideoContent({ id }: { id: string }) {
     setDeleting(true);
     setDeleteError("");
     try {
-      const res = await fetch(`/api/videos/${id}`, { method: "DELETE" });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to delete video");
-      }
+      await deleteVideoMutation({ videoId: id as Id<"videos"> });
+
       toast.success("Video deleted", {
         description: "The video and all its notes have been removed.",
       });
-      queryClient.removeQueries({ queryKey: videoQueryKey(id) });
-      if (session?.user?.id) {
-        queryClient.setQueryData(dashboardQueryKey(session.user.id), (old: { videos: { id: string }[] } | undefined) => {
-          if (!old) return old;
-          return { ...old, videos: old.videos.filter((v) => v.id !== id) };
-        });
-      }
+
       router.push("/dashboard");
     } catch (err) {
       console.error("Error deleting video:", err);
@@ -772,11 +845,11 @@ function VideoContent({ id }: { id: string }) {
     // Delete existing points from DB
     try {
       if (points.length > 0) {
-        await fetch(`/api/videos/${id}/points`, { method: "DELETE" });
+        await deletePointsMutation({ videoId: id as Id<"videos"> });
       }
       // Clear blog from DB
       if (blogContent) {
-        await fetch(`/api/videos/${id}/blog`, { method: "DELETE" });
+        await deleteBlogContentMutation({ videoId: id as Id<"videos"> });
       }
     } catch {
       // Continue even if cleanup fails — we'll overwrite anyway
@@ -786,18 +859,14 @@ function VideoContent({ id }: { id: string }) {
     setPoints([]);
     setBlogContent(null);
     setBlogSaved(false);
-    queryClient.setQueryData<VideoResponse>(videoQueryKey(id), (current) => {
-      if (!current) return current;
-      return { ...current, points: [], blogContent: null };
-    });
 
     // Reset refs so streams can fire again
     hasStartedExtractionRef.current = false;
     hasStartedBlogRef.current = false;
 
-    // Fire both streams
-    notesComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt } });
-    blogComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt } });
+    // Fire both streams — pass title to skip redundant oEmbed fetch
+    notesComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt, title: video.title } });
+    blogComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt, title: video.title } });
 
     setIsRegenerating(false);
   };
@@ -805,7 +874,7 @@ function VideoContent({ id }: { id: string }) {
   // ── Early returns ──────────────────────────────────────────────────────
 
   // Auth loading — only on initial load
-  if ((isPending || !session) && !hasAuthenticatedRef.current) {
+  if ((isPending || !session) && !_videoPageHasAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="loader"></div>
@@ -813,7 +882,7 @@ function VideoContent({ id }: { id: string }) {
     );
   }
 
-  if (loading) {
+  if (loading && !video) {
     return (
       <div className="min-h-screen bg-background">
         <header className="sticky top-0 z-50 bg-card/80 backdrop-blur-lg border-b border-border">
@@ -843,7 +912,7 @@ function VideoContent({ id }: { id: string }) {
     );
   }
 
-  if ((error && !isExtracting) || !video) {
+  if (!video || (!loading && error && !isExtracting)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
         <div className="text-center">
@@ -954,7 +1023,7 @@ function VideoContent({ id }: { id: string }) {
               )}
               {/* Play Button Overlay (only when not streaming) */}
               {!isExtracting && (
-                <div className="absolute inset-0 bg-gradient-to-br from-background/30 to-transparent flex items-center justify-center">
+                <div className="absolute inset-0 bg-linear-to-br from-background/30 to-transparent flex items-center justify-center">
                   <a
                     href={video.youtubeUrl}
                     target="_blank"
@@ -1055,7 +1124,7 @@ function VideoContent({ id }: { id: string }) {
                     </div>
                     <div className="h-3 bg-background rounded-full overflow-hidden border border-border">
                       <div
-                        className="h-full bg-gradient-to-r from-primary to-chart-2 rounded-full transition-all duration-500"
+                        className="h-full bg-linear-to-r from-primary to-chart-2 rounded-full transition-all duration-500"
                         style={{ width: `${progress}%` }}
                       ></div>
                     </div>
@@ -1660,30 +1729,35 @@ function PointCard({
         }`}
     >
       <div className="flex items-start gap-4">
-        {/* Checkbox or circle indicator */}
-        <div className="pt-0.5 flex-shrink-0">
+        <div className="pt-0.5 shrink-0">
           {isStreaming ? (
             <div className="w-3 h-3 rounded-full bg-muted-foreground/30 mt-1"></div>
           ) : onToggle ? (
-            <div className="cursor-pointer" onClick={onToggle}>
+            <button
+              onClick={onToggle}
+              className={`mt-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all duration-300 ${isCompleted
+                ? `bg-${colorClass} border-${colorClass}`
+                : `border-${colorClass} hover:bg-${colorClass}/20`
+                }`}
+              disabled={isUpdating || isStreaming}
+              aria-label={
+                isCompleted ? "Mark as incomplete" : "Mark as complete"
+              }
+              title={
+                isCompleted ? "Mark as incomplete" : "Mark as complete"
+              }
+            >
               {isUpdating ? (
-                <Loader2 size={24} className="animate-spin text-primary" />
+                <Loader2 size={16} className="animate-spin text-white" />
               ) : (
-                <div
-                  className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${isCompleted
-                    ? "bg-primary border-primary"
-                    : "border-border group-hover:border-primary"
-                    }`}
-                >
-                  {isCompleted && (
-                    <CheckCircle2
-                      size={14}
-                      className="text-primary-foreground"
-                    />
-                  )}
-                </div>
+                isCompleted && (
+                  <CheckCircle2
+                    size={14}
+                    className="text-white"
+                  />
+                )
               )}
-            </div>
+            </button>
           ) : (
             <div className="w-3 h-3 rounded-full bg-muted-foreground/30 mt-1"></div>
           )}

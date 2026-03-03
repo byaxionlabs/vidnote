@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { signUp, signIn, useSession, signOut } from "@/lib/auth-client";
+import { signIn, signUp, signOut, useSession } from "@/lib/auth-client";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import {
   Sparkles,
   CheckCircle2,
@@ -18,7 +20,9 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function Home() {
-  const { data: session, isPending } = useSession();
+  const { data: session, isPending: isAuthLoading } = useSession();
+  const isAuthenticated = !!session;
+  const user = session?.user;
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,22 +37,16 @@ export default function Home() {
 
     try {
       if (isLogin) {
-        const result = await signIn.email({
+        await signIn.email({
           email,
           password,
         });
-        if (result.error) {
-          setError(result.error.message || "Login failed");
-        }
       } else {
-        const result = await signUp.email({
+        await signUp.email({
           email,
           password,
           name,
         });
-        if (result.error) {
-          setError(result.error.message || "Sign up failed");
-        }
       }
     } catch {
       setError("Something went wrong. Please try again.");
@@ -65,7 +63,7 @@ export default function Home() {
   //   );
   // }
 
-  if (session) {
+  if (isAuthenticated && user) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-background relative">
         {/* Theme Toggle */}
@@ -78,7 +76,7 @@ export default function Home() {
           </div>
           <h1 className="text-4xl md:text-5xl mb-4 text-foreground">
             Welcome back,{" "}
-            <span className="text-primary font-bold">{session.user.name}</span>!
+            <span className="text-primary font-bold">{user.name || user.email}</span>!
           </h1>
           <p className="text-muted-foreground text-lg max-w-md mx-auto">
             Ready to extract insights from Theo&apos;s latest video?
@@ -94,7 +92,7 @@ export default function Home() {
             <ArrowRight size={18} />
           </Link>
           <button
-            onClick={() => signOut()}
+            onClick={() => void signOut()}
             className="px-8 py-4 border-2 border-border text-foreground font-medium rounded-xl hover:bg-accent hover:border-primary transition-all"
           >
             Sign Out
