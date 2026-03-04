@@ -132,11 +132,11 @@ Rules:
             {
                 role: "user",
                 content: [
-                    // {
-                    //     type: "file",
-                    //     data: youtubeUrl,
-                    //     mediaType: "video/mp4",
-                    // },
+                    {
+                        type: "file",
+                        data: youtubeUrl,
+                        mediaType: "video/mp4",
+                    },
                     {
                         type: "text",
                         text: finalPrompt,
