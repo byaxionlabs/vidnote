@@ -36,6 +36,7 @@ import {
   AlertTriangle,
   RefreshCw,
   PenLine,
+  ChevronDown,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import dynamic from "next/dynamic";
@@ -568,6 +569,7 @@ function VideoContent({ id }: { id: string }) {
     completion: blogStreamingText,
     complete: blogComplete,
     isLoading: isBlogStreaming,
+    setCompletion: setBlogStreamingText,
   } = useCompletion({
     id: "blog-stream",
     streamProtocol: "text",
@@ -586,9 +588,12 @@ function VideoContent({ id }: { id: string }) {
       }
     },
     onError: (err) => {
+      setBlogStreamingText(""); // Clear partial text on failure
       const msg = err.message || "";
       const msgLower = msg.toLowerCase();
-      if (msg.includes("503") || msgLower.includes("unavailable") || msgLower.includes("high demand") || msgLower.includes("overloaded")) {
+
+      // Catch 503s, 500s (uncaught API errors), and high demand messages
+      if (msg.includes("503") || msg.includes("500") || msgLower.includes("internal") || msgLower.includes("unavailable") || msgLower.includes("high demand") || msgLower.includes("overloaded")) {
         toast.error("Blog skipped — Gemini is busy", {
           description: "The AI is swamped right now. Your notes are safe — you can regenerate the blog later!",
           duration: 5000,
@@ -833,40 +838,68 @@ function VideoContent({ id }: { id: string }) {
 
   // Regenerate: clear existing data and re-run extraction
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [showRegenerateMenu, setShowRegenerateMenu] = useState(false);
+  const regenerateMenuRef = useRef<HTMLDivElement>(null);
 
-  const handleRegenerate = async () => {
+  // Click outside to close regenerate menu
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        regenerateMenuRef.current &&
+        !regenerateMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowRegenerateMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleRegenerate = async (type: "all" | "notes" | "blog" = "all") => {
     if (!video || !userApiKey) return;
 
     setIsRegenerating(true);
     setError("");
-    setExtractionPhase("streaming");
-    setIsExtracting(true);
+    setShowRegenerateMenu(false);
 
-    // Delete existing points from DB
-    try {
-      if (points.length > 0) {
-        await deletePointsMutation({ videoId: id as Id<"videos"> });
+    if (type === "all" || type === "notes") {
+      setExtractionPhase("streaming");
+      setIsExtracting(true);
+
+      // Delete existing points from DB
+      try {
+        if (points.length > 0) {
+          await deletePointsMutation({ videoId: id as Id<"videos"> });
+        }
+      } catch {
+        // Continue even if cleanup fails — we'll overwrite anyway
       }
-      // Clear blog from DB
-      if (blogContent) {
-        await deleteBlogContentMutation({ videoId: id as Id<"videos"> });
-      }
-    } catch {
-      // Continue even if cleanup fails — we'll overwrite anyway
+
+      // Reset local state
+      setPoints([]);
+      hasStartedExtractionRef.current = false;
+
+      // Fire notes stream
+      notesComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt, title: video.title } });
     }
 
-    // Reset local state
-    setPoints([]);
-    setBlogContent(null);
-    setBlogSaved(false);
+    if (type === "all" || type === "blog") {
+      // Clear blog from DB
+      try {
+        if (blogContent) {
+          await deleteBlogContentMutation({ videoId: id as Id<"videos"> });
+        }
+      } catch {
+        // Continue even if cleanup fails
+      }
 
-    // Reset refs so streams can fire again
-    hasStartedExtractionRef.current = false;
-    hasStartedBlogRef.current = false;
+      setBlogContent(null);
+      setBlogSaved(false);
+      hasStartedBlogRef.current = false;
 
-    // Fire both streams — pass title to skip redundant oEmbed fetch
-    notesComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt, title: video.title } });
-    blogComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt, title: video.title } });
+      // Fire blog stream
+      blogComplete(video.youtubeUrl, { body: { customPrompt: video.customPrompt, title: video.title } });
+    }
 
     setIsRegenerating(false);
   };
@@ -1199,15 +1232,43 @@ function VideoContent({ id }: { id: string }) {
 
           {/* Regenerate button — contextual, right next to tabs */}
           {!isExtracting && points.length > 0 && (
-            <button
-              onClick={handleRegenerate}
-              disabled={isRegenerating || !userApiKey}
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-border rounded-xl text-muted-foreground hover:bg-primary/10 hover:border-primary/50 hover:text-primary transition-all disabled:opacity-50 disabled:pointer-events-none"
-              title="Regenerate notes & blog"
-            >
-              <RefreshCw size={15} className={isRegenerating ? "animate-spin" : ""} />
-              Regenerate
-            </button>
+            <div className="relative z-50" ref={regenerateMenuRef}>
+              <button
+                onClick={() => setShowRegenerateMenu(!showRegenerateMenu)}
+                disabled={isRegenerating || isBlogStreaming || !userApiKey}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-border rounded-xl text-muted-foreground hover:bg-primary/10 hover:border-primary/50 hover:text-primary transition-all disabled:opacity-50 disabled:pointer-events-none"
+                title="Regenerate options"
+              >
+                <RefreshCw size={15} className={isRegenerating || isBlogStreaming ? "animate-spin" : ""} />
+                Regenerate
+                <ChevronDown size={14} className={`transition-transform ${showRegenerateMenu ? "rotate-180" : ""}`} />
+              </button>
+
+              {showRegenerateMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-card border border-border rounded-xl shadow-lg overflow-hidden">
+                  <div className="py-1">
+                    <button
+                      onClick={() => handleRegenerate("all")}
+                      className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-muted font-medium transition-colors"
+                    >
+                      Regenerate All
+                    </button>
+                    <button
+                      onClick={() => handleRegenerate("notes")}
+                      className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-muted font-medium transition-colors"
+                    >
+                      Only Notes
+                    </button>
+                    <button
+                      onClick={() => handleRegenerate("blog")}
+                      className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-muted font-medium transition-colors"
+                    >
+                      Only Blog
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
