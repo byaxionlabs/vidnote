@@ -70,6 +70,18 @@
   --tracking-normal: 0em;
   --tracking-tight: -0.025em;
   --tracking-wide: 0.025em;
+
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0px 1000px var(--background) inset !important;
+  -webkit-text-fill-color: var(--foreground) !important;
+  border-color: var(--input) !important;
+  transition: background-color 5000s ease-in-out 0s;
+  caret-color: var(--foreground);
+  font-family: var(--font-mono) !important;
+}
 }
 
 /* Dark mode - Quantum Rose Dark */
@@ -173,6 +185,7 @@
 
 html {
   scroll-behavior: smooth;
+  
 }
 
 body {
@@ -191,6 +204,7 @@ h1, h2, h3, h4, h5, h6, .font-serif {
   font-weight: 600;
   letter-spacing: var(--tracking-tight);
 }
+
 
 /* ======================== */
 /* LAYER BASE              */

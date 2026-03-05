@@ -11,9 +11,11 @@ import { useCompletion } from "@ai-sdk/react";
 import { type ActionablePoint } from "@/lib/schemas";
 import { loadApiKey } from "@/lib/api-key";
 import { useQuery as useQueryCached } from "convex-helpers/react/cache/hooks";
-import { useMutation as useMutationConvex } from "convex/react";
+import { useMutation as useMutationConvex, useConvex } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { prewarmDashboard } from "@/lib/prewarm";
+import { usePrewarmIntent } from "@/lib/usePrewarmIntent";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -343,10 +345,12 @@ function VideoContent({ id }: { id: string }) {
   const hasStartedExtractionRef = useRef(false);
   const hasStartedBlogRef = useRef(false);
 
-  // ── Prewarm dashboard cache ────────────────────────────────────────────
-  // So navigating back to /dashboard is instant (no loading skeleton).
-  useEffect(() => {
-  }, [session?.user?.id]);
+  // ── Prewarm dashboard cache ────────────────────────────────────────
+  // On hover of "Back to Dashboard" links, warm the cache.
+  const convex = useConvex();
+  const backToDashboardHandlers = usePrewarmIntent(() => {
+    prewarmDashboard(convex);
+  });
 
   // ── BYOK: load user's API key ─────────────────────────────────────────
   // Use state (not just a ref) so that useObject/useCompletion hooks
@@ -915,7 +919,7 @@ function VideoContent({ id }: { id: string }) {
     );
   }
 
-  if (loading && !video) {
+  if ((loading || !video) && !isVideoMissing) {
     return (
       <div className="min-h-screen bg-background">
         <header className="sticky top-0 z-50 bg-card/80 backdrop-blur-lg border-b border-border">
@@ -945,7 +949,7 @@ function VideoContent({ id }: { id: string }) {
     );
   }
 
-  if (!video || (!loading && error && !isExtracting)) {
+  if (!video || isVideoMissing || (!loading && error && !isExtracting)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
         <div className="text-center">
@@ -1027,6 +1031,7 @@ function VideoContent({ id }: { id: string }) {
         <Link
           href="/dashboard"
           className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors mb-8 group"
+          {...backToDashboardHandlers}
         >
           <ArrowLeft
             size={18}

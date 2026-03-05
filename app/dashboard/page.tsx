@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSession, signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { useQuery as useQueryWithCache } from "convex-helpers/react/cache/hooks";
-import { useMutation } from "convex/react";
+import { useMutation, useConvex } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { prewarmVideo } from "@/lib/prewarm";
+import { usePrewarmIntent } from "@/lib/usePrewarmIntent";
 import { Id } from "@/convex/_generated/dataModel";
 import Link from "next/link";
 import Image from "next/image";
@@ -86,28 +88,34 @@ export default function Dashboard() {
       thumbnailUrl: v.thumbnailUrl || "",
       createdAt: new Date(v._creationTime).toISOString(),
     }));
-    _cachedVideos = mapped; // persist for next mount
+    // Guard against auth race: Convex may briefly return [] before the
+    // auth token propagates. Keep showing cached data instead of flashing
+    // the empty state on return visits.
+    if (mapped.length === 0 && _cachedVideos.length > 0) {
+      return _cachedVideos;
+    }
+    _cachedVideos = mapped;
     return mapped;
   }, [dashboardVideos]);
+
+  // Don't commit to showing the empty state until the query has had time
+  // to settle with proper auth. This prevents the "No notes yet" flash
+  // caused by getDashboardVideos briefly returning [] before the auth
+  // token propagates to the Convex backend.
+  const [emptyConfirmed, setEmptyConfirmed] = useState(false);
+  const emptyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    if (!isLoading && videos.length === 0) {
+      emptyTimerRef.current = setTimeout(() => setEmptyConfirmed(true), 400);
+      return () => clearTimeout(emptyTimerRef.current);
+    }
+    setEmptyConfirmed(false);
+  }, [isLoading, videos.length]);
 
   useEffect(() => {
     if (session) setHasApiKey(hasStoredApiKey());
   }, [session]);
-
-  // ── Hover prewarming ─────────────────────────────────────────────────
-  // Render hidden components on hover that register Convex subscriptions
-  // in the cache registry. When the video page mounts, data is instant.
-  const [prewarmedIds, setPrewarmedIds] = useState<Set<string>>(new Set());
-
-  const handlePrefetchVideo = useCallback((videoId: string) => {
-    setPrewarmedIds(prev => {
-      if (prev.has(videoId)) return prev;
-      const next = new Set(prev);
-      next.add(videoId);
-      return next;
-    });
-    router.prefetch(`/video/${videoId}`);
-  }, [router]);
 
   const [submitting, setSubmitting] = useState(false);
   const createFastVideoMutation = useMutation(api.videos.createFastVideo);
@@ -281,10 +289,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Hidden prewarm queries — registers Convex subscriptions in cache */}
-      {Array.from(prewarmedIds).map(vid => (
-        <PrewarmVideo key={vid} videoId={vid} />
-      ))}
       {/* Decorative Background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-0 left-1/2 w-[800px] h-[400px] bg-primary/3 rounded-full blur-3xl transform -translate-x-1/2 -translate-y-1/2"></div>
@@ -416,7 +420,7 @@ export default function Dashboard() {
           </div>
 
           {/* Videos Grid */}
-          {isLoading && videos.length === 0 ? (
+          {(isLoading || !emptyConfirmed) && videos.length === 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -453,70 +457,12 @@ export default function Dashboard() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {videos.map((video, index) => (
-                <div
+                <VideoCard
                   key={video.id}
-                  className="bg-card border border-border rounded-2xl overflow-hidden group hover:shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col"
-                  onMouseEnter={() => handlePrefetchVideo(video.id)}
-                  onFocus={() => handlePrefetchVideo(video.id)}
-                >
-                  <Link href={`/video/${video.id}`} className="flex-1 flex flex-col">
-                    <div className="relative overflow-hidden">
-                      <Image
-                        src={video.thumbnailUrl}
-                        alt={video.title || "Video thumbnail"}
-                        width={480}
-                        height={270}
-                        className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                      {/* Overlay */}
-                      <div className="absolute inset-0 bg-linear-to-t from-background/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
-                        <span className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg shadow-md">
-                          <CheckCircle2 size={16} />
-                          View Notes
-                        </span>
-                      </div>
-                    </div>
-                    <div className="p-5 flex-1 flex flex-col">
-                      <h3 className="font-semibold line-clamp-2 mb-3 group-hover:text-primary transition-colors text-lg text-foreground leading-snug">
-                        {video.title || "Untitled Video"}
-                      </h3>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mt-auto">
-                        <Clock size={14} />
-                        {new Date(video.createdAt).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        })}
-                      </div>
-                    </div>
-                  </Link>
-                  <div className="px-5 pb-5 flex gap-2 mt-auto">
-                    <a
-                      href={video.youtubeUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 py-2.5 flex items-center justify-center gap-2 text-sm border border-border rounded-xl text-foreground hover:bg-accent hover:border-primary/50 transition-all"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <ExternalLink size={14} />
-                      Watch on YouTube
-                    </a>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setDeleteConfirmId(video.id);
-                      }}
-                      disabled={deletingId === video.id}
-                      className="w-11 h-11 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10 transition-all"
-                    >
-                      {deletingId === video.id ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : (
-                        <Trash2 size={16} />
-                      )}
-                    </button>
-                  </div>
-                </div>
+                  video={video}
+                  deletingId={deletingId}
+                  onDeleteConfirm={setDeleteConfirmId}
+                />
               ))}
             </div>
           )}
@@ -698,13 +644,89 @@ export default function Dashboard() {
   );
 }
 
-// Hidden component that registers a Convex query subscription in the
-// convex-helpers cache. When the user navigates to /video/[id], the
-// useQueryCached call finds the data already warm — no skeleton.
-function PrewarmVideo({ videoId }: { videoId: string }) {
-  useQueryWithCache(
-    api.videos.getVideoById,
-    { videoId: videoId as Id<"videos"> }
+// ── Video Card with Prewarm Intent ──────────────────────────────────────────
+// Extracted into its own component so each card gets its own prewarm hook.
+// On hover (debounced 120ms), calls convex.prewarmQuery() to warm the cache.
+// On mouse leave, cancels the debounce — fast hovers are free.
+
+function VideoCard({
+  video,
+  deletingId,
+  onDeleteConfirm,
+}: {
+  video: VideoItem;
+  deletingId: string | null;
+  onDeleteConfirm: (id: string) => void;
+}) {
+  const convex = useConvex();
+  const router = useRouter();
+  const prewarmHandlers = usePrewarmIntent(() => {
+    prewarmVideo(convex, video.id);
+    router.prefetch(`/video/${video.id}`);
+  });
+
+  return (
+    <div
+      className="bg-card border border-border rounded-2xl overflow-hidden group hover:shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col"
+      {...prewarmHandlers}
+    >
+      <Link href={`/video/${video.id}`} className="flex-1 flex flex-col">
+        <div className="relative overflow-hidden">
+          <Image
+            src={video.thumbnailUrl}
+            alt={video.title || "Video thumbnail"}
+            width={480}
+            height={270}
+            className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-500"
+          />
+          {/* Overlay */}
+          <div className="absolute inset-0 bg-linear-to-t from-background/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
+            <span className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg shadow-md">
+              <CheckCircle2 size={16} />
+              View Notes
+            </span>
+          </div>
+        </div>
+        <div className="p-5 flex-1 flex flex-col">
+          <h3 className="font-semibold line-clamp-2 mb-3 group-hover:text-primary transition-colors text-lg text-foreground leading-snug">
+            {video.title || "Untitled Video"}
+          </h3>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mt-auto">
+            <Clock size={14} />
+            {new Date(video.createdAt).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric'
+            })}
+          </div>
+        </div>
+      </Link>
+      <div className="px-5 pb-5 flex gap-2 mt-auto">
+        <a
+          href={video.youtubeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 py-2.5 flex items-center justify-center gap-2 text-sm border border-border rounded-xl text-foreground hover:bg-accent hover:border-primary/50 transition-all"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ExternalLink size={14} />
+          Watch on YouTube
+        </a>
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            onDeleteConfirm(video.id);
+          }}
+          disabled={deletingId === video.id}
+          className="w-11 h-11 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10 transition-all"
+        >
+          {deletingId === video.id ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <Trash2 size={16} />
+          )}
+        </button>
+      </div>
+    </div>
   );
-  return null;
 }

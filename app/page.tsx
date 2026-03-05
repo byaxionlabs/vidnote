@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signIn, signUp, signOut, useSession } from "@/lib/auth-client";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useConvex } from "convex/react";
+import { prewarmDashboard } from "@/lib/prewarm";
+import { usePrewarmIntent } from "@/lib/usePrewarmIntent";
 import {
   Sparkles,
   CheckCircle2,
@@ -29,6 +30,23 @@ export default function Home() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const convex = useConvex();
+
+  // ── Eager dashboard prewarm ──────────────────────────────────────────
+  // As soon as the user is authenticated, start warming the dashboard
+  // query in the background. By the time they click "Go to Dashboard",
+  // data is already there — no skeleton.
+  useEffect(() => {
+    if (isAuthenticated) {
+      prewarmDashboard(convex);
+    }
+  }, [isAuthenticated, convex]);
+
+  // Also prewarm on hover of "Go to Dashboard" link (covers re-hovers
+  // after the 3s dedupe window expires)
+  const dashboardPrewarmHandlers = usePrewarmIntent(() => {
+    prewarmDashboard(convex);
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +89,7 @@ export default function Home() {
           <ThemeToggle />
         </div>
         <div className="text-center mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-primary/10 border-2 border-primary mb-6">
+          <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-primary/60 border-2 border-primary mb-6">
             <Play size={40} className="text-primary ml-1" />
           </div>
           <h1 className="text-4xl md:text-5xl mb-4 text-foreground">
@@ -87,6 +105,7 @@ export default function Home() {
           <Link
             href="/dashboard"
             className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+            {...dashboardPrewarmHandlers}
           >
             Go to Dashboard
             <ArrowRight size={18} />
@@ -122,7 +141,7 @@ export default function Home() {
         <div className="flex-1 flex flex-col justify-center py-16 lg:py-0 lg:pr-12">
           <div className="max-w-xl">
             {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/30 rounded-full text-primary text-sm font-medium mb-8 animate-in fade-in slide-in-from-left duration-500">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/60 border border-primary/60 rounded-full text-primary text-sm font-medium mb-8 animate-in fade-in slide-in-from-left duration-500">
               <Sparkles size={16} />
               <span>@t3dotgg Video Insights</span>
             </div>
@@ -177,7 +196,7 @@ export default function Home() {
           <div className="w-full bg-card border border-border rounded-3xl p-8 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-right duration-500 delay-200">
             {/* Card Header */}
             <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/30 mb-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/60 border border-primary/60 mb-4">
                 <FileText size={28} className="text-primary" />
               </div>
               <h2 className="text-2xl font-bold text-foreground mb-2">
@@ -220,7 +239,7 @@ export default function Home() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Your name"
-                    className="w-full px-4 py-3.5 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all"
+                    className="w-full px-4 py-3.5 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all"
                     required={!isLogin}
                   />
                 </div>
@@ -233,7 +252,7 @@ export default function Home() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full px-4 py-3.5 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all"
+                  className="w-full px-4 py-3.5 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all"
                   required
                 />
               </div>
@@ -245,14 +264,14 @@ export default function Home() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3.5 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all"
+                  className="w-full px-4 py-3.5 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all"
                   required
                   minLength={8}
                 />
               </div>
 
               {error && (
-                <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm animate-in fade-in duration-200">
+                <div className="p-4 rounded-xl bg-destructive/60 border border-destructive/60 text-destructive text-sm animate-in fade-in duration-200">
                   {error}
                 </div>
               )}
