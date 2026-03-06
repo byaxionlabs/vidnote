@@ -83,7 +83,7 @@ export default function Home() {
 
   if (isAuthenticated && user) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-background relative">
+      <div className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center px-4 sm:px-6 bg-background relative">
         {/* Theme Toggle */}
         <div className="absolute top-6 right-6">
           <ThemeToggle />
@@ -92,7 +92,7 @@ export default function Home() {
           <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-primary/60 border-2 border-primary mb-6">
             <Play size={40} className="text-primary ml-1" />
           </div>
-          <h1 className="text-4xl md:text-5xl mb-4 text-foreground">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl mb-4 text-foreground">
             Welcome back,{" "}
             <span className="text-primary font-bold">{user.name || user.email}</span>!
           </h1>
@@ -101,10 +101,10 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full sm:w-auto animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
           <Link
             href="/dashboard"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+            className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all"
             {...dashboardPrewarmHandlers}
           >
             Go to Dashboard
@@ -112,7 +112,7 @@ export default function Home() {
           </Link>
           <button
             onClick={() => void signOut()}
-            className="px-8 py-4 border-2 border-border text-foreground font-medium rounded-xl hover:bg-accent hover:border-primary transition-all"
+            className="px-8 py-4 border-2 border-border text-foreground font-medium rounded-xl hover:bg-accent hover:border-primary transition-all text-center"
           >
             Sign Out
           </button>
@@ -122,7 +122,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background overflow-hidden">
+    <div className="min-h-screen min-h-[100dvh] flex flex-col bg-background overflow-hidden">
       {/* Theme Toggle - Fixed Position */}
       <div className="fixed top-6 right-6 z-50">
         <ThemeToggle />
@@ -136,9 +136,9 @@ export default function Home() {
       </div>
 
       {/* Main Content */}
-      <main className="relative z-10 flex-1 flex flex-col lg:flex-row items-center max-w-7xl mx-auto w-full px-6 lg:px-12">
+      <main className="relative z-10 flex-1 flex flex-col lg:flex-row items-center max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-12">
         {/* Left - Hero Content */}
-        <div className="flex-1 flex flex-col justify-center py-16 lg:py-0 lg:pr-12">
+        <div className="flex-1 flex flex-col justify-center py-10 sm:py-16 lg:py-0 lg:pr-12">
           <div className="max-w-xl">
             {/* Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/60 border border-primary/60 rounded-full text-primary text-sm font-medium mb-8 animate-in fade-in slide-in-from-left duration-500">
@@ -149,13 +149,13 @@ export default function Home() {
             {/* Logo & Title */}
             <div className="flex items-center gap-4 mb-6 animate-in fade-in slide-in-from-left duration-500 delay-50">
 
-              <h1 className="text-4xl  text-primary italic lg:text-5xl font-bold text-foreground font-serif">
+              <h1 className="text-3xl sm:text-4xl text-primary italic lg:text-5xl font-bold text-foreground font-serif">
                 Theo Notes
               </h1>
             </div>
 
             {/* Headline - Large and Editorial */}
-            <h2 className="text-3xl lg:text-5xl leading-[1.15] mb-6 text-foreground animate-in fade-in slide-in-from-left duration-500 delay-100">
+            <h2 className="text-2xl sm:text-3xl lg:text-5xl leading-[1.15] mb-6 text-foreground animate-in fade-in slide-in-from-left duration-500 delay-100">
               Never Miss an
               <br />
               <span className="text-primary italic">Important Point</span>
@@ -164,13 +164,13 @@ export default function Home() {
             </h2>
 
             {/* Subheadline */}
-            <p className="text-lg text-muted-foreground mb-10 leading-relaxed animate-in fade-in slide-in-from-left duration-500 delay-200">
+            <p className="text-base sm:text-lg text-muted-foreground mb-8 sm:mb-10 leading-relaxed animate-in fade-in slide-in-from-left duration-500 delay-200">
               Paste any video from <span className="text-primary font-medium">@t3dotgg</span> and let AI extract
               the key takeaways, action items, and insights you need to level up.
             </p>
 
             {/* Feature Pills */}
-            <div className="flex flex-wrap gap-3 mb-10 animate-in fade-in slide-in-from-left duration-500 delay-300">
+            <div className="flex flex-wrap gap-2 sm:gap-3 mb-8 sm:mb-10 animate-in fade-in slide-in-from-left duration-500 delay-300">
               <div className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border rounded-xl shadow-sm">
                 <Target size={18} className="text-primary" />
                 <span className="text-sm font-medium text-foreground">Action Items</span>
@@ -191,9 +191,9 @@ export default function Home() {
         </div>
 
         {/* Right - Auth Card */}
-        <div className="flex-1 flex items-center justify-center py-12 lg:py-0 w-full max-w-md lg:max-w-lg">
+        <div className="flex-1 flex items-center justify-center py-6 sm:py-12 lg:py-0 w-full max-w-md lg:max-w-lg">
           {/* Auth Card with Elevated Design */}
-          <div className="w-full bg-card border border-border rounded-3xl p-8 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-right duration-500 delay-200">
+          <div className="w-full bg-card border border-border rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-right duration-500 delay-200">
             {/* Card Header */}
             <div className="text-center mb-8">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/60 border border-primary/60 mb-4">

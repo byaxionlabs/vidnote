@@ -365,7 +365,7 @@ export default function Dashboard() {
 
       {/* Mobile Header */}
       <header className="lg:hidden sticky top-0 z-50 bg-card/80 backdrop-blur-lg border-b border-border">
-        <div className="px-6 py-4 flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-md">
               <span className="text-lg font-bold text-primary-foreground">T</span>
@@ -399,11 +399,11 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="lg:ml-64 relative z-10">
-        <div className="max-w-6xl mx-auto px-6 py-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
           {/* Page Header */}
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 sm:gap-6 mb-8 sm:mb-10">
             <div>
-              <h1 className="text-4xl lg:text-5xl mb-3 text-foreground">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl mb-2 sm:mb-3 text-foreground">
                 Your <span className="text-primary italic">Theo Notes</span>
               </h1>
               <p className="text-muted-foreground text-lg">
@@ -471,12 +471,12 @@ export default function Dashboard() {
 
       {/* Add Video Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div
             className="absolute inset-0 bg-background/80 backdrop-blur-md"
             onClick={() => setShowModal(false)}
           ></div>
-          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-lg shadow-2xl">
+          <div className="relative bg-card border border-border rounded-2xl sm:rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl">
             <button
               onClick={() => setShowModal(false)}
               className="absolute top-5 right-5 w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
@@ -573,12 +573,12 @@ export default function Dashboard() {
       )}
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div
             className="absolute inset-0 bg-background/80 backdrop-blur-md"
             onClick={() => { setDeleteConfirmId(null); setDeleteError(""); }}
           ></div>
-          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-md shadow-2xl">
+          <div className="relative bg-card border border-border rounded-2xl sm:rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl">
             <button
               onClick={() => { setDeleteConfirmId(null); setDeleteError(""); }}
               className="absolute top-5 right-5 w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"

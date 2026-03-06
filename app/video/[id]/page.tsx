@@ -990,7 +990,7 @@ function VideoContent({ id }: { id: string }) {
 
       {/* Header */}
       <header className="sticky top-0 z-50 bg-card/80 backdrop-blur-lg border-b border-border">
-        <div className="max-w-5xl mx-auto px-6">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-18 py-4">
             <Link
               href="/dashboard"
@@ -1005,7 +1005,7 @@ function VideoContent({ id }: { id: string }) {
                 href={video.youtubeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-4 py-2.5 flex items-center gap-2 border border-border rounded-xl text-foreground hover:bg-accent hover:border-primary/50 transition-all"
+                className="flex items-center justify-center gap-2 w-10 h-10 sm:w-auto sm:h-auto sm:px-4 sm:py-2.5 border border-border rounded-xl text-foreground hover:bg-accent hover:border-primary/50 transition-all"
               >
                 <ExternalLink size={16} />
                 <span className="hidden sm:inline">Watch Video</span>
@@ -1026,11 +1026,11 @@ function VideoContent({ id }: { id: string }) {
       </header>
 
       {/* Main Content */}
-      <main className="relative z-10 max-w-5xl mx-auto px-6 py-10">
+      <main className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
         {/* Back Button */}
         <Link
           href="/dashboard"
-          className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors mb-8 group"
+          className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors mb-6 sm:mb-8 group"
           {...backToDashboardHandlers}
         >
           <ArrowLeft
@@ -1041,7 +1041,7 @@ function VideoContent({ id }: { id: string }) {
         </Link>
 
         {/* Video Hero Section */}
-        <div className="bg-card border border-border rounded-3xl overflow-hidden mb-10 shadow-lg">
+        <div className="bg-card border border-border rounded-2xl sm:rounded-3xl overflow-hidden mb-6 sm:mb-10 shadow-lg">
           <div className="flex flex-col lg:flex-row">
             {/* Thumbnail */}
             <div className="lg:w-2/5 relative overflow-hidden">
@@ -1079,7 +1079,7 @@ function VideoContent({ id }: { id: string }) {
             </div>
 
             {/* Info */}
-            <div className="flex-1 p-6 lg:p-8 flex flex-col">
+            <div className="flex-1 p-5 sm:p-6 lg:p-8 flex flex-col">
               <div className="flex items-center gap-2 text-xs text-primary font-medium uppercase tracking-wider mb-3">
                 <span>@t3dotgg</span>
                 <span className="text-muted-foreground">•</span>
@@ -1087,7 +1087,7 @@ function VideoContent({ id }: { id: string }) {
                   Theo&apos;s Channel
                 </span>
               </div>
-              <h1 className="text-2xl lg:text-3xl mb-4 text-foreground leading-snug">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl mb-3 sm:mb-4 text-foreground leading-snug">
                 {video.title}
               </h1>
 
@@ -1113,7 +1113,7 @@ function VideoContent({ id }: { id: string }) {
               </div>
 
               {/* Status Section */}
-              <div className="mt-auto bg-muted/50 rounded-2xl p-5 border border-border">
+              <div className="mt-auto bg-muted/50 rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-border">
                 {/* Streaming statuses */}
                 {showStreamingUI && (
                   <div className="flex items-center gap-3">
@@ -1182,11 +1182,11 @@ function VideoContent({ id }: { id: string }) {
         </div>
 
         {/* ── Tab Switcher + Regenerate ─────────────────────────────────── */}
-        <div className="flex items-center justify-between gap-4 mb-8">
-          <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-xl border border-border w-fit">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <div className="flex items-center justify-between gap-1 bg-muted/50 p-1 rounded-xl border border-border overflow-x-auto no-scrollbar">
             <button
               onClick={() => setActiveTab("notes")}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "notes"
+              className={`flex w-full items-center justify-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 whitespace-nowrap ${activeTab === "notes"
                 ? "bg-card text-foreground shadow-sm border border-border"
                 : "text-muted-foreground hover:text-foreground"
                 }`}
@@ -1204,7 +1204,7 @@ function VideoContent({ id }: { id: string }) {
             </button>
             <button
               onClick={() => setActiveTab("blog")}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "blog"
+              className={`flex w-full items-center justify-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 whitespace-nowrap ${activeTab === "blog"
                 ? "bg-card text-foreground shadow-sm border border-border"
                 : "text-muted-foreground hover:text-foreground"
                 }`}
@@ -1225,7 +1225,7 @@ function VideoContent({ id }: { id: string }) {
             </button>
             <button
               onClick={() => setActiveTab("my-notes")}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === "my-notes"
+              className={`flex w-full items-center jusitfy-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 whitespace-nowrap ${activeTab === "my-notes"
                 ? "bg-card text-foreground shadow-sm border border-border"
                 : "text-muted-foreground hover:text-foreground"
                 }`}
@@ -1550,7 +1550,7 @@ function VideoContent({ id }: { id: string }) {
                   )}
                 </div>
                 {/* Blog body */}
-                <div className="px-6 sm:px-10 py-8 blog-content">
+                <div className="px-4 sm:px-6 md:px-10 py-6 sm:py-8 blog-content">
                   {renderMarkdown(displayBlogText)}
                   {isBlogStreaming && (
                     <span className="inline-block w-2 h-5 bg-primary rounded-sm animate-pulse ml-0.5 align-text-bottom"></span>
@@ -1631,12 +1631,12 @@ function VideoContent({ id }: { id: string }) {
 
       {/* Video Preview Modal */}
       {previewPoint && video && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div
             className="absolute inset-0 bg-background/80 backdrop-blur-md"
             onClick={() => setPreviewPoint(null)}
           ></div>
-          <div className="relative bg-card border border-border rounded-3xl overflow-hidden w-full max-w-3xl shadow-2xl">
+          <div className="relative bg-card border border-border rounded-t-2xl sm:rounded-3xl overflow-hidden w-full max-w-3xl shadow-2xl max-h-[90vh] sm:max-h-[85vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="p-4 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1692,12 +1692,12 @@ function VideoContent({ id }: { id: string }) {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div
             className="absolute inset-0 bg-background/80 backdrop-blur-md"
             onClick={() => { setShowDeleteModal(false); setDeleteError(""); }}
           ></div>
-          <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-md shadow-2xl">
+          <div className="relative bg-card border border-border rounded-t-2xl sm:rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl">
             <button
               onClick={() => { setShowDeleteModal(false); setDeleteError(""); }}
               className="absolute top-5 right-5 w-10 h-10 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"

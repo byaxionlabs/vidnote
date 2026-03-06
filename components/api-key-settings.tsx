@@ -127,7 +127,7 @@ export function ApiKeySettings({ userId, isOpen, onClose }: ApiKeySettingsProps)
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
             {/* Backdrop */}
             <div
                 className="absolute inset-0 bg-background/80 backdrop-blur-md"
@@ -135,7 +135,7 @@ export function ApiKeySettings({ userId, isOpen, onClose }: ApiKeySettingsProps)
             ></div>
 
             {/* Modal */}
-            <div className="relative bg-card border border-border rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+            <div className="relative bg-card border border-border rounded-2xl sm:rounded-3xl p-5 sm:p-8 w-full max-w-lg shadow-2xl animate-in fade-in zoom-in-95 duration-300">
                 {/* Close Button */}
                 <button
                     onClick={onClose}
